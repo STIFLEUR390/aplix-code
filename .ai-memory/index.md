@@ -42,11 +42,11 @@ for the README's version of a §8 decision, say why it was changed instead of si
 
 ## Hard rules
 
-- **v0.3 is in place.** Cargo workspace at `crates/*` (9 crates, `resolver = "2"`, edition 2021,
-  MSRV 1.80), every crate holds code: config, traits, HTTP adapters, JSONL sessions, heuristic guard,
-  file/shell tools, the agent loop, the tool registry and the `apc` binary. Still targets, not code:
-  `apc model`, the `open-jev` backend, hooks, context compaction. Check `crates/<crate>/src` before
-  trusting a doc claim.
+- **v0.3b is in place.** Cargo workspace at `crates/*` (9 crates, `resolver = "2"`, edition 2021,
+  MSRV 1.80), every crate holds code: config, traits, HTTP adapters, JSONL sessions, heuristic guard
+  + `open-jev` sidecar client, file/shell tools, the agent loop, the tool registry and the `apc`
+  binary. Still targets, not code: `apc model`, hooks, context compaction, intent classification.
+  Check `crates/<crate>/src` before trusting a doc claim.
 - Do not add a provider/backend-specific dependency to `apc-agent` or `apc-cli`; swappable behaviour
   goes behind a trait in `apc-traits`.
 - Every `run_shell` passes the Permission Guard (`P > 0.8` ⇒ confirmation). No bypass.

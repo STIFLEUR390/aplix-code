@@ -39,7 +39,7 @@ Every modern coding agent makes hundreds of tiny decisions per session:
 - *"What does the user actually want here — generation, explanation, or review?"*
 - *"Is this 40 KB of context relevant to the question?"*
 
-Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` sends them to a **local decision model** (`open-jev`, a quantized DeBERTa-v3) that answers in **under 20 ms for free**, and only calls the big LLM when it's actually needed.
+Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` sends them to a **local decision model** (`open-jev`, a quantized DeBERTa-v3, served on localhost) that answers in **under 20 ms for free**, and only calls the big LLM when it's actually needed. A built-in heuristic answers when that model is not running, so `apc` never waits on it.
 
 | | Traditional CLI agent | **`apc`** |
 | :--- | :---: | :---: |
@@ -111,7 +111,7 @@ aplix-code/
 │   ├── apc-traits/     # All the traits (Model, Tool, Memory, Decision, Plugin).
 │   ├── apc-agent/      # The agent loop. Orchestration only.
 │   ├── apc-tools/      # Built-in tools (fs, shell).
-│   ├── apc-decision/   # Local decision engine (open-jev) + heuristics fallback.
+│   ├── apc-decision/   # Heuristic guard + `open-jev` client (feature-gated).
 │   ├── apc-models/     # LLM provider adapters (direct HTTP, SSE streaming).
 │   ├── apc-memory/     # Session history (JSONL); long-term memory lands in v1.3.
 │   ├── apc-plugins/    # Static plugin registry (dynamic loading lands in v1.2).
@@ -177,7 +177,8 @@ Requirements: Rust 1.80+, a modern OS. No system dependencies beyond OpenSSL (or
 | **v0.1** | Skeleton, workspace, `apc init` + config resolution |
 | **v0.2** | `apc run` + `apc chat` with streaming over direct HTTP adapters |
 | **v0.2b** | Session memory in JSONL, `apc chat --continue` |
-| **v0.3** | Local Permission Guard: heuristic first, then `open-jev` |
+| **v0.3** | Local Permission Guard: heuristics on every shell command |
+| **v0.3b** | `open-jev` backend behind a feature flag, fail-open to the heuristics |
 | **v0.4** | `apc model` subcommand + resumable downloads |
 | **v0.5** | Opt-in telemetry: local `tracing` logs + Sentry, off by default |
 | **v1.0** | MVP: stable CLI, docs, CI, releases for Linux/macOS/Windows |

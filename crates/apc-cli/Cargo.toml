@@ -16,6 +16,8 @@ path = "src/main.rs"
 # Dev phase: Sentry is compiled in. The v1.0 release task flips this to `[]`.
 default = ["telemetry"]
 telemetry = ["dep:sentry"]
+# Ask a local-jev sidecar before the heuristics (SPEC.md §8.11).
+open-jev = ["apc-decision/open-jev"]
 
 [dependencies]
 apc-agent.workspace = true

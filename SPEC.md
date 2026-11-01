@@ -218,7 +218,7 @@ pub trait Plugin: Send + Sync {
 | **`harness-rs`** | L'architecture la plus proche de la vision d'`apc` : Skills, Memory, Hooks, Sensors, compaction progressive, proc-macro `#[skill]`. | La référence architecturale majeure : séparation en couches, concept de **Sensors** (`cargo check` comme signal), compaction progressive. | La maturité (0.0.x) et la tentation de tout implémenter dès le MVP. |
 | **`crab-code`** | Clone Rust de Claude Code (~161k LOC), permissions multi-modes, config en couches. | Les **modes de permission** (default, acceptEdits, dontAsk, bypassPermissions, plan, auto) et la résolution de config en couches. | La taille et la complexité ; `apc` doit avoir sa propre identité. |
 | **`opencode-rust`** | Architecture serveur/client : serveur HTTP local, CLI/TUI client. | Le modèle serveur local, qui prépare l'intégration Tauri. | Le pont de plugins en Node.js, incompatible avec un binaire Rust unique. |
-| **`local-jev`** | Modèle de décision local, offline, <18 ms, API simple. | L'intégration comme moteur de décision par défaut ; la stratégie de téléchargement reprenable. | La dépendance à un mainteneur unique → **fallback heuristique obligatoire**. |
+| **`local-jev`** | Modèle de décision local, offline, <18 ms, API simple. | Le contrat HTTP `/v1/systemone/choice` comme backend de décision (sidecar), avec fallback heuristique obligatoire. Voir §8.11. | La dépendance à un mainteneur unique → **fallback heuristique obligatoire**. |
 
 ---
 
@@ -259,7 +259,7 @@ opt-level = 3      # voir §8.5 : la vitesse primait sur la taille
 | v0.1 | Squelette du workspace, `apc init`, résolution de config, `apc config` |
 | v0.2 | `apc run` + `apc chat` (REPL texte), streaming SSE, adaptateurs HTTP directs |
 | v0.3 | Boucle d'agent + outils intégrés ; Permission Guard heuristique sur `run_shell` |
-| v0.3b | Backend `open-jev` derrière un feature flag (l'heuristique reste le fallback) |
+| v0.3b | Backend `open-jev` derrière un feature flag : client du sidecar `local-jev` + `Cascade` heuristique |
 | v0.4 | `apc model` + téléchargement reprenable |
 | v0.5 | Télémétrie opt-in : logs `tracing` locaux + Sentry désactivé par défaut |
 | v1.0 | MVP stable : CLI, docs, CI, releases Linux/macOS/Windows |
@@ -281,9 +281,10 @@ Le modèle neuronal ne peut pas être dans le chemin critique : il pèse ~350 Mo
 la demande, et son runtime d'inférence est le poste de risque n°1 pour le budget de 15 Mo. Donc :
 
 - V1 livrable = heuristique seule, `apc` fonctionne dès `cargo build`.
-- `apc-decision` expose `DecisionProvider` ; `LocalJevProvider` est derrière un feature (ou un
-  backend chargé à l'exécution) activé quand le modèle est présent.
-- L'heuristique reste le fallback permanent, jamais du code mort.
+- `apc-decision` expose `DecisionProvider` ; `JevProvider` est derrière le feature `open-jev`,
+  éteint par défaut, et interrogé via `decision.endpoint` (ou `APC_DECISION_ENDPOINT`).
+- L'heuristique reste le fallback permanent, jamais du code mort : `Cascade` bascule sur elle à la
+  moindre erreur de transport, donc un sidecar absent ou bloqué ne bloque pas le CLI.
 
 Cela répond directement à l'exigence « le CLI ne doit jamais être bloqué par l'absence du modèle ».
 
@@ -372,6 +373,38 @@ Conséquences assumées :
   pointer une passerelle locale.
 - Si un fournisseur exotique (Bedrock, Vertex, Cohere) devient nécessaire, réévaluer `genai` à ce
   moment-là plutôt que de réimplémenter son SDK.
+
+### 8.11 `open-jev` interroge un sidecar, il n'embarque pas de runtime d'inférence
+
+La v0.3b devait brancher le modèle `open-jev` derrière un feature flag. Trois contraintes ont
+orienté la forme prise :
+
+1. **Aucun runtime d'inférence n'est disponible ici.** `candle`, `ort`, `tract`, `tokenizers` ne sont
+   pas dans le cache local, le réseau plafonne à ~4 Ko/s et aucune pondération n'est sur le disque.
+   Embarquer le modèle aurait rendu le feature infalsifiable sans réseau.
+2. **`local-jev` est déjà l'articulation prévue.** Il expose exactement l'API de décision visée
+   (`/v1/systemone/choice`, `/noul`, `/score`) et sait tourner sans pondérations (moteur lexical
+   `ZeroWeightFast`), donc un utilisateur peut le lancer à côté d'`apc` sans rien télécharger.
+3. **Le sous-processus reste optionnel.** Le contrat est du HTTP local : pas de FFI, pas de
+   chargement dynamique, donc `#![forbid(unsafe_code)]` tient (SPEC §8.8) et `apc` continue de
+   fonctionner seul.
+
+Conséquences assumées :
+
+- `JevProvider` (`apc-decision::jev`, feature `open-jev`) est un client ; il lit la probabilité de
+  l'option `yes` dans `probabilities`, **pas** `confidence` (qui décrit seulement le gagnant).
+- La route `noul` de local-jev classe au lieu de répondre oui/non : `DecisionProvider::noul` est donc
+  émis comme un `choice(["no", "yes"])`.
+- `Cascade` fait du fail-open : toute erreur (connexion, statut HTTP, JSON) rend la main à
+  l'heuristique, sans message d'erreur pour l'utilisateur.
+- **Une réponse plate vaut absence d'avis.** Mesuré sur `local-jev` v2.0.0 installé tel quel : sans
+  pondérations, son moteur lexical répond `0.5 / 0.5` à toute question. Lue comme un risque faible,
+  cette réponse laissait passer `rm -rf` sans confirmation. `JevProvider` traite donc un écart
+  < 0.01 entre les deux meilleures options comme une erreur, et l'heuristique reprend la main. Le
+  jour où un backend à poids réels arrive, cette garde ne change rien à ses réponses informatives.
+- `decision.endpoint` est le seul réglage ajouté ; sans lui, le feature ne change rien au binaire.
+- Conséquence ouverte : le modèle ne donne pas encore la qualité « DeBERTa q4f16 » promise par le
+  README ; ce sera vrai quand un backend d'inférence embarqué sera réellement mesurable.
 
 ---
 

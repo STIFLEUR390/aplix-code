@@ -1,6 +1,6 @@
 # Commands
 
-v0.1 is implemented; commands marked *target* do not exist yet.
+v0.3b is implemented; commands marked *target* do not exist yet.
 
 ## Build / run
 
@@ -12,11 +12,28 @@ cargo build --release
 cargo run -p apc-cli -- config --model llama3   # flag layer override
 ```
 
-*Target (v0.2+):* `apc run "<prompt>"`, `apc chat [--continue]`, `apc model <cmd>`.
+```bash
+./target/debug/apc run "list the crates"        # one-shot agent turn
+./target/debug/apc chat                          # REPL, persists to the session file
+./target/debug/apc chat --continue               # replays the latest session
+cargo build --offline --features open-jev        # add the local-jev decision client
+APC_DECISION_ENDPOINT=http://127.0.0.1:8080 ./target/debug/apc run "…"
+```
+
+*Target (v0.4+):* `apc model <cmd>`.
 
 Requires Rust 1.80+. Only system dependency expected: OpenSSL, or `rustls` if the feature is enabled.
 
 ## Verify (in this order before claiming done)
+
+```bash
+cargo fmt --all --check
+cargo clippy --offline --all-targets -- -D warnings
+cargo test --offline --workspace
+cargo test --offline -p apc-decision --features open-jev   # the open-jev build is a separate path
+cargo build --offline --no-default-features               # telemetry off
+```
+
 
 ```bash
 cargo fmt --check

@@ -151,6 +151,32 @@ the reason is the most likely regression here:
 - A "bypass everything" flag is not in the MVP; if one is ever added it must be explicit, logged, and
   visible in `apc config`.
 
+## Decision backend / open-jev (v0.3b)
+
+- The model is **not embedded**: `crates/apc-decision/src/jev.rs` is an HTTP client for a
+  `local-jev` sidecar (SPEC §8.11). No inference crate (`candle`, `ort`, `tract`) is cached on this
+  machine and weights are absent, so an embedded backend could not even be compiled and tested here.
+- `local-jev` v1.0.0 source sits at `/tmp/local-jev/Local-Jev-1.0.0` (and
+  `~/Téléchargements/ABDM/Compressed/Local-Jev-1.0.0.zip`). It cannot be built here: it needs
+  `axum 0.7`, not in the cargo cache. Port 8080 is Apache on this machine, so `http://127.0.0.1:8080`
+  is *not* a local-jev instance.
+- **Never take `confidence` as the risk.** It is the winner's probability; a confident `no` would
+  read as a dangerous command. Read `probabilities` for the `yes` option. Test
+  `noul_reads_the_yes_probability_not_the_confidence` pins this.
+- local-jev's `noul` route classifies (option + category), it does not answer yes/no; that is why
+  `DecisionProvider::noul` is emitted as a two-option `choice`.
+- `Cascade` swallows the error on purpose: a dead sidecar must not surface to the user, only change
+  who answers. Verified live by pointing `APC_DECISION_ENDPOINT` at a closed port: the command ran
+  with no prompt.
+- **Measured trap:** `cargo install local-jev` gives v2.0.0, whose `serve` has no weight flag and
+  whose engine answers `0.5 / 0.5` to everything (`local-jev score --text "rm -rf /" --criteria …`
+  → `0.5000`). Wired naively, the primary backend returned 0.5 for `rm -rf`, below the 0.8
+  threshold, so the command ran with **no** confirmation — the guard was off while looking on.
+  Fixed in `flat()`: a gap < 0.01 between the top two probabilities is an error, not a low score.
+  Any new backend needs the same rule.
+- Real local-jev on this machine: `local-jev serve --port 8091` (8080 is Apache), then
+  `APC_DECISION_ENDPOINT=http://127.0.0.1:8091` on a binary built with `--features open-jev`.
+
 ## Model downloads and sessions
 
 - `~350 MB` for `open-jev`; the download must be resumable (`Range`) and SHA-256 verified, writing to

@@ -145,6 +145,19 @@ fn env_telemetry_accepts_zero_and_one() {
 }
 
 #[test]
+fn env_names_the_decision_endpoint() {
+    let dir = sandbox("endpoint");
+    assert!(apc(&dir, &["init"]).status.success());
+
+    let text = stdout(&apc_env(
+        &dir,
+        &["config"],
+        &[("APC_DECISION_ENDPOINT", "http://127.0.0.1:8080")],
+    ));
+    assert!(row(&text, "decision.endpoint").contains("http://127.0.0.1:8080"));
+}
+
+#[test]
 fn version_reports_the_decision_model() {
     let dir = sandbox("version");
     let output = apc(&dir, &["--version"]);

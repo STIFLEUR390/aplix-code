@@ -32,6 +32,9 @@ model = "claude-sonnet-4-5"
 [decision]
 # Shell commands with P(destructive) above this threshold ask for confirmation.
 threshold = 0.8
+# local-jev sidecar used when apc is built with the `open-jev` feature
+# (APC_DECISION_ENDPOINT). Without it the heuristics answer.
+# endpoint = "http://127.0.0.1:8080"
 "#;
 
 /// Fully resolved configuration.
@@ -75,11 +78,17 @@ impl Default for Provider {
 pub struct Decision {
     /// Above this destructive probability, a shell command asks for confirmation.
     pub threshold: f64,
+    /// Root URL of a local-jev sidecar; only read by builds with the `open-jev` feature.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
 }
 
 impl Default for Decision {
     fn default() -> Self {
-        Self { threshold: 0.8 }
+        Self {
+            threshold: 0.8,
+            endpoint: None,
+        }
     }
 }
 

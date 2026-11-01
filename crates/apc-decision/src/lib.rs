@@ -6,6 +6,14 @@
 //! exists. Recall is chosen over precision — a false alarm costs one confirmation, a miss costs a
 //! wiped disk.
 
+mod cascade;
+#[cfg(feature = "open-jev")]
+mod jev;
+
+pub use cascade::Cascade;
+#[cfg(feature = "open-jev")]
+pub use jev::JevProvider;
+
 use apc_core::Result;
 use apc_traits::DecisionProvider;
 
@@ -140,5 +148,57 @@ mod tests {
             .expect("choice");
         assert_eq!(pick, "rm -rf /");
         assert!(probability > 0.8);
+    }
+
+    struct Fixed(f64);
+    struct Broken;
+
+    #[async_trait::async_trait]
+    impl DecisionProvider for Fixed {
+        async fn noul(&self, _state: &str, _question: &str) -> Result<f64> {
+            Ok(self.0)
+        }
+        async fn choice(
+            &self,
+            _state: &str,
+            _question: &str,
+            options: &[&str],
+        ) -> Result<(String, f64)> {
+            Ok((options[0].to_owned(), self.0))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl DecisionProvider for Broken {
+        async fn noul(&self, _state: &str, _question: &str) -> Result<f64> {
+            Err(apc_core::Error::Decision("server is down".to_owned()))
+        }
+        async fn choice(
+            &self,
+            _state: &str,
+            _question: &str,
+            _options: &[&str],
+        ) -> Result<(String, f64)> {
+            Err(apc_core::Error::Decision("server is down".to_owned()))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_working_backend_answers_first() {
+        let cascade = Cascade::new(
+            std::sync::Arc::new(Fixed(0.97)),
+            std::sync::Arc::new(HeuristicProvider),
+        );
+        assert_eq!(cascade.noul("ls -la", GUARD_QUESTION).await.unwrap(), 0.97);
+    }
+
+    #[tokio::test]
+    async fn a_broken_backend_falls_back_to_the_heuristics() {
+        let cascade = Cascade::new(
+            std::sync::Arc::new(Broken),
+            std::sync::Arc::new(HeuristicProvider),
+        );
+        assert!(cascade.noul("rm -rf /", GUARD_QUESTION).await.unwrap() > 0.8);
+        assert_eq!(cascade.noul("ls -la", GUARD_QUESTION).await.unwrap(), 0.0);
     }
 }

@@ -2,12 +2,12 @@
 
 ## State of the repo (check before assuming anything)
 
-v0.3 exists: a Cargo workspace (`crates/*`, 9 crates) and all nine now hold code — `apc-core`
+v0.3b exists: a Cargo workspace (`crates/*`, 9 crates) and all nine now hold code — `apc-core`
 (config + chat types), `apc-traits` (every trait), `apc-models` (HTTP adapters, SSE), `apc-memory`
 (JSONL sessions), `apc-decision` (heuristic guard), `apc-tools` (file tools + guarded shell),
 `apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli` (`init`, `config`, `run`,
-`chat`, `--version`). `apc model`, the `open-jev` backend, hooks and `skills/` do **not** exist yet
-(v0.3b+), and there is no CI. Read the tree before assuming a module exists.
+`chat`, `--version`). `apc model`, hooks and `skills/` do **not** exist yet (v0.4+), and there is no
+CI. Read the tree before assuming a module exists.
 
 ## Sources of truth
 
@@ -79,8 +79,8 @@ dependency to `apc-agent` or `apc-cli`.
   prompt — that is why `git push --force` scores 0.82). Declining returns a refusal string the model
   sees; the command is never spawned. If you add a tool that runs a process, it must take the same
   route — the guard lives in the tool, not in the CLI.
-- `score()` is substring matching over a lowercase command, keeping the highest match: fast, and
-  honest about being a fallback until `open-jev` lands (v0.3b). Adding a pattern is one tuple in
+- `score()` is substring matching over a lowercase command, keeping the highest match: fast, and it
+  stays the permanent fallback under the `open-jev` backend. Adding a pattern is one tuple in
   `PATTERNS` in `crates/apc-decision/src/lib.rs`; the true-positive test asserts `> 0.8`.
 - Tools resolve paths lexically against the working directory (`..` and absolute paths are refused).
   Don't switch to `canonicalize`: the file may not exist yet, and the check must not depend on the
@@ -118,14 +118,14 @@ dependency to `apc-agent` or `apc-cli`.
 - `deny_unknown_fields` is deliberate: a typo in `apc.toml` must fail loudly, not be ignored.
 - Layers: defaults < user (`~/.config/aplix/apc.toml`, via `directories`) < `./apc.toml` <
   `./apc.local.toml` < `APC_PROVIDER` / `APC_MODEL` / `APC_BASE_URL` / `APC_PERMISSION_THRESHOLD` /
-  `APC_TELEMETRY` < flags. `apc config` prints the winning layer per key.
+  `APC_DECISION_ENDPOINT` / `APC_TELEMETRY` < flags. `apc config` prints the winning layer per key.
 
 ## Constraints that come from the product promise (do not silently break)
 
 - **Local-first micro-decisions.** Safety checks and intent/context decisions run on a local
   model (`open-jev`, quantized DeBERTa-v3, ~350 MB, `q4f16`) in <20 ms, never a cloud call. The
   **heuristic fallback ships first and always exists**: `apc` must work with no model downloaded
-  (that is why `local-jev` is a feature flag, SPEC §8.1).
+  (that is why `open-jev` is a feature flag, SPEC §8.1, and why it is a sidecar client, §8.11).
 - **Every `run_shell` goes through the Permission Guard**; `P(destructive) > 0.8` ⇒ explicit user
   confirmation. Configurable threshold. No bypass path in `apc-agent` or `apc-tools`.
 - **Streaming is in the trait** (`chat → ChatStream`, i.e. `Stream<Item = Result<ChatEvent>>`), not
@@ -176,12 +176,34 @@ canned SSE body — never call a real provider from a test.
 
 If CI is added, it becomes the source of truth for this list.
 
+## Decision backends (v0.3b)
+
+- The `open-jev` cargo feature is **off by default** and lives in `crates/apc-decision`; `apc-cli`
+  re-exports it as `open-jev = ["apc-decision/open-jev"]`.
+- `JevProvider` (`crates/apc-decision/src/jev.rs`) is an HTTP **client** for a local-jev sidecar —
+  the model is not embedded, because no inference runtime or weights are available offline
+  (SPEC §8.11). A user runs `local-jev` themselves and sets `decision.endpoint` /
+  `APC_DECISION_ENDPOINT` (e.g. `http://127.0.0.1:8080`).
+- `P(destructive)` is read from `probabilities[option == "yes"].probability`, **never** from
+  `confidence`: confidence describes whichever option won, so a confident `no` would read as a high
+  risk. local-jev's own `noul` route classifies instead of answering yes/no, hence the
+  `choice(["no","yes"])` mapping.
+- A **flat** answer is treated as no opinion: local-jev v2.0.0 without weights answers `0.5 / 0.5`
+  to everything, and reading that as "low risk" let `rm -rf` through unconfirmed (reproduced, then
+  fixed). `flat()` in `jev.rs` errors when the two best probabilities are within 0.01, so the
+  heuristic answers; keep that guard when adding another backend.
+- `Cascade` is fail-open by design: any transport, status or JSON error falls back to
+  `HeuristicProvider` silently. That is what keeps SPEC §2.3 true — a dead sidecar must not block
+  `apc`. Tests cover both directions (working backend wins, broken one falls back).
+- Verify with `cargo test --offline -p apc-decision --features open-jev`, and remember the default
+  build never includes `reqwest` here.
+
 ## Roadmap order (SPEC §7 — do not jump ahead of it)
 
 v0.1 skeleton + `apc init`/`apc config`/config resolution (**done**) → v0.2 `run`/`chat` with
 streaming over direct HTTP adapters (**done**) → v0.2b session memory JSONL (**done**) → v0.3 agent
-loop, tools and the heuristic Permission Guard (**done**) → v0.3b `open-jev` behind the feature flag →
-v0.4 `apc model` + downloads → v0.5 telemetry off/on → v1.0 MVP. TUI (`ratatui`, v1.1), intent classification, `skills/`, SearXNG/Obscura (v1.2),
+loop, tools and the heuristic Permission Guard (**done**) → v0.3b `open-jev` sidecar behind the
+feature flag (**done**) → v0.4 `apc model` + downloads → v0.5 telemetry off/on → v1.0 MVP. TUI (`ratatui`, v1.1), intent classification, `skills/`, SearXNG/Obscura (v1.2),
 long-term memory (v1.3), `apc serve` + Tauri (v2.0), sandboxing/WASM (v2.1) are all **post-MVP** —
 don't scaffold them for an MVP task.
 

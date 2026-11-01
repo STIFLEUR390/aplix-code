@@ -139,6 +139,8 @@ dependencies = [
  "apc-core",
  "apc-traits",
  "async-trait",
+ "reqwest",
+ "serde_json",
  "tokio",
 ]
 

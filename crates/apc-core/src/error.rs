@@ -26,6 +26,9 @@ pub enum Error {
     /// A tool refused or failed; the text goes back to the model as the call result.
     #[error("{0}")]
     Tool(String),
+    /// The local decision backend failed; the caller falls back to the heuristics.
+    #[error("{0}")]
+    Decision(String),
 
     /// The platform exposes no user data directory.
     #[error("cannot locate the user data directory for this platform")]

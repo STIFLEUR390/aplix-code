@@ -86,6 +86,18 @@ confidence. Keep the names exactly as written (`noul` comes from the local-jev l
 
 Still to come: hooks (`PreToolUse`, `PostToolUse`, `Stop`) and context compaction.
 
+## Decision backends (v0.3b, shipped)
+
+- `apc_traits::DecisionProvider`: `noul(state, question) -> P(yes)` and `choice(state, question,
+  options) -> (pick, confidence)`.
+- `HeuristicProvider` (always built): `score()` over `PATTERNS`, the permanent fallback.
+- `JevProvider` (feature `open-jev`, `crates/apc-decision/src/jev.rs`): HTTP client for a local-jev
+  sidecar — `POST {endpoint}/v1/systemone/choice` with `{state, question, options}`; `noul` is a
+  `["no","yes"]` choice read on `probabilities[option == "yes"].probability`.
+- `Cascade { primary, fallback }`: primary first, fallback on any error (fail-open).
+- CLI wiring: `decision_provider(config)` in `crates/apc-cli/src/main.rs` — with the feature and a
+  `decision.endpoint`, the cascade wraps `JevProvider`; otherwise the heuristic alone.
+
 ## Built-in tools (v0.3, shipped)
 
 `crates/apc-tools/src/lib.rs`: `ReadFile`, `WriteFile`, `ListDir`, `RunShell`.

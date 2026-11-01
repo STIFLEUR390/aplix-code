@@ -30,6 +30,7 @@ const ENV_KEYS: &[(&str, &str)] = &[
     ("APC_MODEL", "provider.model"),
     ("APC_BASE_URL", "provider.base_url"),
     ("APC_PERMISSION_THRESHOLD", "decision.threshold"),
+    ("APC_DECISION_ENDPOINT", "decision.endpoint"),
     ("APC_TELEMETRY", "telemetry"),
 ];
 
@@ -236,11 +237,23 @@ fn print_delta(event: &ChatEvent) {
 }
 
 /// One agent with the built-in tools and the heuristic guard.
+/// The heuristic guard always answers; the `open-jev` build asks the model first when an endpoint
+/// is configured, and the cascade keeps a dead sidecar from blocking the CLI.
+fn decision_provider(_endpoint: Option<&str>) -> std::sync::Arc<dyn DecisionProvider> {
+    #[cfg(feature = "open-jev")]
+    if let Some(endpoint) = _endpoint {
+        return std::sync::Arc::new(apc_decision::Cascade::new(
+            std::sync::Arc::new(apc_decision::JevProvider::new(endpoint)),
+            std::sync::Arc::new(apc_decision::HeuristicProvider),
+        ));
+    }
+    std::sync::Arc::new(apc_decision::HeuristicProvider)
+}
+
 fn agent(config: &config::Config) -> Result<apc_agent::Agent> {
     let adapter: std::sync::Arc<dyn apc_traits::ModelAdapter> =
         std::sync::Arc::from(apc_models::build(&config.provider)?);
-    let decision: std::sync::Arc<dyn DecisionProvider> =
-        std::sync::Arc::new(apc_decision::HeuristicProvider);
+    let decision = decision_provider(config.decision.endpoint.as_deref());
     let approver: std::sync::Arc<dyn Approver> = std::sync::Arc::new(StdinApprover);
     let tools = apc_plugins::default_tools(
         std::env::current_dir()?,
@@ -342,6 +355,15 @@ fn show_config(args: &Overrides) -> Result<()> {
         (
             "decision.threshold",
             loaded.config.decision.threshold.to_string(),
+        ),
+        (
+            "decision.endpoint",
+            loaded
+                .config
+                .decision
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "-".to_owned()),
         ),
         ("telemetry", loaded.config.telemetry.to_string()),
     ];

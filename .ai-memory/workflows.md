@@ -16,7 +16,7 @@
 | v0.2 | `apc run` + `apc chat` (plain REPL), streaming over direct HTTP adapters — **done** (no `genai`, SPEC §8.10) |
 | v0.2b | Session memory JSONL + `apc chat --continue` — **done** |
 | v0.3 | Agent loop + built-in tools + heuristic Permission Guard — **done** |
-| v0.3b | `open-jev` backend behind a feature flag (heuristic stays the fallback) |
+| v0.3b | `open-jev` client for a local-jev sidecar behind a feature flag, `Cascade` fallback — **done** |
 | v0.4 | `apc model` + resumable downloads |
 | v0.5 | Opt-in telemetry: `tracing` logs + Sentry, off by default |
 | v1.0 | MVP: stable CLI, docs, CI, releases Linux/macOS/Windows |
