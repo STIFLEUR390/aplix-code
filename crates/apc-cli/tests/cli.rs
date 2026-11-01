@@ -52,7 +52,8 @@ fn base_command(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Command {
         .env_remove("APC_BASE_URL")
         .env_remove("APC_API_KEY")
         .env_remove("APC_PERMISSION_THRESHOLD")
-        .env_remove("APC_TELEMETRY");
+        .env_remove("APC_TELEMETRY")
+        .env_remove("APC_SEARXNG_URL");
     for (key, value) in env {
         command.env(key, value);
     }
@@ -216,6 +217,49 @@ fn server(content_type: &'static str, body: &'static str) -> u16 {
     port
 }
 
+/// Same as `server`, but hands the request body back so a test can read what was sent.
+fn capturing_server(body: &'static str) -> (u16, std::sync::mpsc::Receiver<String>) {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind a port");
+    let port = listener.local_addr().expect("local address").port();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().expect("accept one request");
+        let mut request = Vec::new();
+        let mut chunk = [0u8; 1024];
+        loop {
+            let read = socket.read(&mut chunk).expect("read the request");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&chunk[..read]);
+            let text = String::from_utf8_lossy(&request).into_owned();
+            let Some(end) = text.find("\r\n\r\n") else {
+                continue;
+            };
+            let length = text[..end]
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())?
+                })
+                .unwrap_or(0);
+            if request.len() >= end + 4 + length {
+                break;
+            }
+        }
+        let _ = sender.send(String::from_utf8_lossy(&request).into_owned());
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n{body}"
+        );
+        socket.write_all(response.as_bytes()).expect("write body");
+    });
+    (port, receiver)
+}
+
 #[test]
 fn run_streams_from_an_openai_compatible_endpoint() {
     let dir = sandbox("run");
@@ -344,4 +388,49 @@ fn model_download_names_the_unknown_id() {
         "{}",
         stderr(&out)
     );
+}
+
+#[test]
+fn an_unconfigured_search_tool_is_never_offered_to_the_model() {
+    let sse = "data: [DONE]\n\n";
+
+    let dir = sandbox("tools-off");
+    let (port, request) = capturing_server(sse);
+    let base = format!("http://127.0.0.1:{port}/v1");
+    let output = apc_env(
+        &dir,
+        &["run", "hi"],
+        &[
+            ("APC_PROVIDER", "openai"),
+            ("APC_MODEL", "auto"),
+            ("APC_BASE_URL", &base),
+            ("APC_API_KEY", "test-key"),
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let sent = request
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the request body");
+    assert!(sent.contains("\"read_file\""), "{sent}");
+    assert!(!sent.contains("\"web_search\""), "{sent}");
+
+    let dir = sandbox("tools-on");
+    let (port, request) = capturing_server(sse);
+    let base = format!("http://127.0.0.1:{port}/v1");
+    let output = apc_env(
+        &dir,
+        &["run", "hi"],
+        &[
+            ("APC_PROVIDER", "openai"),
+            ("APC_MODEL", "auto"),
+            ("APC_BASE_URL", &base),
+            ("APC_API_KEY", "test-key"),
+            ("APC_SEARXNG_URL", "http://127.0.0.1:8888"),
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let sent = request
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the request body");
+    assert!(sent.contains("\"web_search\""), "{sent}");
 }

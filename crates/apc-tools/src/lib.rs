@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
-//! Built-in tools: file access confined to the working directory, and a guarded shell.
+//! Built-in tools: file access confined to the working directory, a guarded shell, and the
+//! local web tools.
+
+pub mod web;
+
+pub use web::{FetchPage, WebSearch};
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;

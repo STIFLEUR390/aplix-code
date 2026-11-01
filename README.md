@@ -61,7 +61,10 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
   Permission Guard prompt in the status bar; falls back to a plain REPL when stdin/stdout is piped.
 - **`apc init`** — Generate a commented `apc.toml` config file.
 - **`apc config`** — Print the effective configuration and which layer supplied each key.
-- **Built-in tools**: `read_file`, `write_file`, `list_dir`, `run_shell`.
+- **Built-in tools**: `read_file`, `write_file`, `list_dir`, `run_shell`, `fetch_page`.
+- **Private web search** — `web_search` goes through your own SearXNG instance
+  (`tools.searxng_url` / `APC_SEARXNG_URL`); without one the tool is not registered at all, so the
+  model is never offered a tool that cannot answer.
 - **Intent classification and skills** — A local heuristic tags each prompt (`generate_code`,
   `explain_code`, `review_code`, `other`), no model needed, and the matching `skills/<name>.md` of the
   current project heads the conversation as the system prompt. No skill file, no system prompt.
@@ -81,8 +84,7 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 ### 🔮 Post-MVP (V1.x – V2)
 
 - Local memory (SQLite + `sqlite-vec` for RAG over past sessions).
-- **SearXNG** web search (self-hosted, private).
-- **Obscura**-based web extraction.
+- JavaScript-rendered page extraction (CDP or `obscura mcp --http`, `SPEC.md` §8.13).
 - Dynamic plugin loading (native `.so` or WASM).
 - `apc serve` — local HTTP server, for editor integrations.
 - **Tauri desktop app** (a thin client over `apc serve`).

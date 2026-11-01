@@ -11,7 +11,7 @@ crates/
   apc-core/      shared types, errors, config         — no internal deps
   apc-traits/    all traits                          — the plugin contract
   apc-agent/     agent loop, orchestration           — no direct I/O
-  apc-tools/     built-in tools (fs, shell)
+  apc-tools/     built-in tools (fs, shell, web)
   apc-decision/  Permission Guard: heuristic first, then open-jev
   apc-models/    LLM adapters (direct HTTP + SSE)
   apc-memory/    JSONL session store (+ future backends)
@@ -100,7 +100,9 @@ Still to come: hooks (`PreToolUse`, `PostToolUse`, `Stop`) and context compactio
 
 ## Built-in tools (v0.3, shipped)
 
-`crates/apc-tools/src/lib.rs`: `ReadFile`, `WriteFile`, `ListDir`, `RunShell`.
+`crates/apc-tools/src/lib.rs`: `ReadFile`, `WriteFile`, `ListDir`, `RunShell`;
+`crates/apc-tools/src/web.rs`: `WebSearch` (SearXNG) and `FetchPage` (plain HTTP, `SPEC.md` §8.13).
+`apc_plugins::default_tools` omits `web_search` when `tools.searxng_url` is unset.
 
 - Paths resolve lexically under the working directory; absolute paths and `..` above the root are
   refused (`resolve()`), so nothing needs to exist yet and no filesystem call decides safety.

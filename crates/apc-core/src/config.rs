@@ -35,6 +35,13 @@ threshold = 0.8
 # local-jev sidecar used when apc is built with the `open-jev` feature
 # (APC_DECISION_ENDPOINT). Without it the heuristics answer.
 # endpoint = "http://127.0.0.1:8080"
+
+[tools]
+# SearXNG instance backing `web_search` (or export APC_SEARXNG_URL). Unset means the tool is
+# not registered at all: no URL, no outbound request, and no error at startup.
+# searxng_url = "http://127.0.0.1:8888"
+# Bytes of a fetched page handed to the model; the rest is dropped.
+fetch_max_bytes = 65536
 "#;
 
 /// Fully resolved configuration.
@@ -45,6 +52,8 @@ pub struct Config {
     pub provider: Provider,
     /// Local decision layer settings.
     pub decision: Decision,
+    /// Local web tools (v1.2).
+    pub tools: Tools,
     /// Opt-in Sentry-compatible error reporting (SPEC.md §3.4).
     pub telemetry: bool,
 }
@@ -88,6 +97,26 @@ impl Default for Decision {
         Self {
             threshold: 0.8,
             endpoint: None,
+        }
+    }
+}
+
+/// `[tools]` section.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Tools {
+    /// SearXNG base URL; without it `web_search` is not registered.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub searxng_url: Option<String>,
+    /// Bytes of a fetched page kept for the model.
+    pub fetch_max_bytes: usize,
+}
+
+impl Default for Tools {
+    fn default() -> Self {
+        Self {
+            searxng_url: None,
+            fetch_max_bytes: 65_536,
         }
     }
 }
@@ -315,7 +344,7 @@ mod tests {
     #[test]
     fn defaults_layer_covers_every_key() {
         let defaults = Layer::defaults();
-        assert_eq!(defaults.table.len(), 3);
+        assert_eq!(defaults.table.len(), 4);
         assert_eq!(
             defaults.table["decision"]["threshold"].as_float(),
             Some(0.8)

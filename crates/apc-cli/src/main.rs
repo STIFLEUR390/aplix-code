@@ -33,6 +33,7 @@ const ENV_KEYS: &[(&str, &str)] = &[
     ("APC_PERMISSION_THRESHOLD", "decision.threshold"),
     ("APC_DECISION_ENDPOINT", "decision.endpoint"),
     ("APC_TELEMETRY", "telemetry"),
+    ("APC_SEARXNG_URL", "tools.searxng_url"),
 ];
 
 #[derive(Parser)]
@@ -341,12 +342,7 @@ fn agent(
     let adapter: std::sync::Arc<dyn apc_traits::ModelAdapter> =
         std::sync::Arc::from(apc_models::build(&config.provider)?);
     let decision = decision_provider(config.decision.endpoint.as_deref());
-    let tools = apc_plugins::default_tools(
-        std::env::current_dir()?,
-        decision,
-        approver,
-        config.decision.threshold,
-    );
+    let tools = apc_plugins::default_tools(std::env::current_dir()?, decision, approver, config);
     Ok(apc_agent::Agent::new(adapter, tools))
 }
 

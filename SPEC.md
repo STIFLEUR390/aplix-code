@@ -447,6 +447,35 @@ Conséquences :
 - Le jour où un artefact réel apparaît, l'ajout est une entrée de quatre champs ; rien d'autre à
   changer.
 
+### 8.13 `fetch_page` lit le web en HTTP, sans Obscura
+
+La feuille de route v1.2 prévoyait un `fetch_page` adossé à Obscura, « navigateur headless exposé en
+HTTP ». Vérification faite sur la version installée (0.2.5) : `obscura serve` est un serveur **CDP**
+(`/json/version`, `/json/list`, contenu uniquement par WebSocket) et `obscura fetch` est une commande
+shell ; il n'existe aucun endpoint HTTP de récupération. Trois voies ont été pesées :
+
+- **client CDP maison** (~200 lignes de WebSocket, `Sec-WebSocket-Accept` compris) : aucun crate
+  WebSocket n'est en cache local, donc `cargo build --offline` ne peut pas l'ajouter, et c'est du
+  protocole à maintenir pour un seul outil ;
+- **la crate `obscura`** comme bibliothèque : dépendance git qui compile V8 depuis les sources —
+  build hors-ligne impossible, chaîne C++ exigée, et la taille exploserait le plafond de 15 Mo ;
+- **`obscura mcp --http`** : contrat réel et `reqwest` suffirait, mais impose de lancer un second
+  service et de parler MCP/JSON-RPC depuis l'outil.
+
+La v1.2 livre donc `fetch_page` en `GET` direct (`reqwest`) suivi d'un décodage texte minimal :
+`<script>`/`<style>` retirés, balises aplaties, entités usuelles décodées, et sortie tronquée à
+`tools.fetch_max_bytes` (64 Kio par défaut) sur une frontière de caractère, avec le nombre d'octets
+perdus. Les pages rendues en JavaScript ne sont pas couvertes.
+
+Conséquences :
+
+- `tools.obscura_url` n'existe pas : il n'y a pas de service à configurer, donc `fetch_page` est
+  toujours enregistré. `tools.searxng_url` (ou `APC_SEARXNG_URL`) est la seule URL, et sans elle
+  `web_search` n'apparaît pas dans le schéma envoyé au modèle — aucun appel sortant, aucune erreur
+  au démarrage.
+- `obscura mcp --http` reste la voie de reprise si le rendu JavaScript devient nécessaire : l'ajout
+  est un backend derrière le `Tool` déjà en place.
+
 ---
 
 ## 9. Hors périmètre V1 (explicite)

@@ -141,6 +141,25 @@ still exists in `main::repl` and must keep working.
   that is what keeps `apc` working in a project without `skills/`.
 - Only `apc-cli` does this I/O; `apc-agent` stays prompt-neutral.
 
+## Web tools (v1.2)
+
+- `crates/apc-tools/src/web.rs` holds `WebSearch` (SearXNG, `GET {base}/search?q=…&format=json` →
+  `results[].title/url/content`, 5 results by default, 10 max) and `FetchPage` (plain `reqwest`
+  `GET`, then `readable()` strips `<script>`/`<style>` and markup, `truncate()` cuts on a char
+  boundary and says how many bytes were dropped).
+- **Both are config-gated, in different ways.** `tools.searxng_url` unset (`APC_SEARXNG_URL`) means
+  `web_search` is not built at all — an unconfigured tool must never reach the schema the model is
+  offered, and `crates/apc-cli/tests/cli.rs::an_unconfigured_search_tool_is_never_offered_to_the_model`
+  pins that. `fetch_page` needs no service, so it is always registered; only `tools.fetch_max_bytes`
+  (65536) tunes it.
+- `apc_plugins::default_tools(root, decision, approver, config)` takes the whole `&Config` now: the
+  threshold and the tool URLs come from one place, and adding a tool stops growing the parameter list.
+- `fetch_page` is **not** Obscura: `obscura serve` speaks CDP (WebSocket) only, no WebSocket crate is
+  cached offline, and the `obscura` crate builds V8 from source. The reasoning, and
+  `obscura mcp --http` as the way back, are in `SPEC.md` §8.13. Don't reintroduce an
+  `obscura_url`-style key without a backend that actually honours it.
+- `reqwest` gained the `query` feature for `.query(&[..])`; that is the only dependency change.
+
 ## Session memory (v0.2b)
 
 - `apc-memory::JsonlStore` writes one file per session under
