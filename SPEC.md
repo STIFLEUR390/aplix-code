@@ -142,6 +142,8 @@ première compilation, et elle reste le filet de sécurité en production.
   partent. En debug (unwind) les panics sont remontées.
 - **Câblage** : le subscriber `tracing` (logs locaux, toujours actifs) et le layer Sentry sont montés
   dans la racine de composition `apc-cli`. Aucune crate de bibliothèque n'initialise de client.
+- **Verbosite locale** : `APC_LOG=debug|info|warn|error` (défaut `warn`) règle le niveau du
+  subscriber `tracing`, sans réseau ni DSN.
 
 ---
 

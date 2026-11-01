@@ -8,6 +8,7 @@ use apc_core::error::Error;
 use apc_core::Result;
 use apc_traits::{ModelAdapter, Tool};
 use futures_util::StreamExt;
+use tracing::{debug, warn};
 
 /// Tool rounds one prompt may take before the loop gives up.
 pub const MAX_STEPS: usize = 8;
@@ -50,6 +51,7 @@ impl Agent {
                 conversation.push(Message::tool_result(call.id, result));
             }
         }
+        warn!(steps = MAX_STEPS, "agent stopped without a final answer");
         Err(Error::Tool(format!(
             "stopped after {MAX_STEPS} tool steps without a final answer"
         )))
@@ -58,13 +60,19 @@ impl Agent {
     /// Run one tool call. A failure is an answer to the model, not a crash for the user.
     async fn execute(&self, call: &apc_core::chat::ToolCall) -> String {
         let Some(tool) = self.tools.iter().find(|tool| tool.name() == call.name) else {
+            warn!(tool = %call.name, "unknown tool");
             return format!("unknown tool `{}`", call.name);
         };
-        let args = serde_json::from_str(&call.arguments)
-            .unwrap_or_else(|_| serde_json::json!({ "raw": call.arguments }));
+        let raw = call.arguments.clone();
+        let args = serde_json::from_str(&raw).unwrap_or_else(|_| serde_json::json!({ "raw": raw }));
+        // Names and outcomes only: never arguments, which can hold file contents.
+        debug!(tool = %call.name, "tool call");
         match tool.execute(args).await {
             Ok(text) => text,
-            Err(error) => format!("{error}"),
+            Err(error) => {
+                warn!(tool = %call.name, %error, "tool failed");
+                format!("{error}")
+            }
         }
     }
 }

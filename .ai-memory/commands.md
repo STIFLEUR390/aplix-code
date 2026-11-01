@@ -40,7 +40,7 @@ cargo build --offline --no-default-features               # telemetry off
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --workspace
-ls -lh target/release/apc             # must stay under 15 MB (6.76 MB at v0.3b, 5.46 MB with
+ls -lh target/release/apc             # must stay under 15 MB (7.38 MB at v0.5, 5.64 MB with
                                       # --no-default-features; reqwest+tokio dominate, not Sentry)
 ```
 
@@ -117,6 +117,9 @@ cargo run -p apc-cli -- config                       # .env is auto-loaded in de
 APC_TELEMETRY=1 APC_SENTRY_DSN=http://key@host/1 target/debug/apc config
 APC_TELEMETRY=0 target/debug/apc config              # force off, beats any DSN
 cargo build --no-default-features                    # compiles the `telemetry` feature out
+```
+
+APC_LOG=debug target/debug/apc run "…"                    # local logs, no DSN, no network
 ```
 
 Current state (dev phase): `telemetry` is a **default** feature of `apc-cli`, `.env` (git-ignored)

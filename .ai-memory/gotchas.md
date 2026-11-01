@@ -80,7 +80,7 @@
   has been exercised here — the network tops out at a few KB/s. Treat it as tested logic, not as a
   field-proven download, and re-run it end to end the day a catalog entry exists.
 
-## Telemetry / Sentry (v0.1 dev phase)
+## Telemetry / Sentry (dev phase)
 
 - Two independent gates, both required: `telemetry = true` in the resolved config **and** a DSN in
   `APC_SENTRY_DSN`/`SENTRY_DSN`. Losing either silently disables everything; check `apc config`
@@ -95,6 +95,9 @@
   explicitly captured errors leave a release binary.
 - Never call `sentry::init(())` — the no-argument form reads ambient `SENTRY_DSN` and arms telemetry
   behind the config gate's back. `sentry::init((dsn, options))` keeps the gate explicit.
+- The fmt layer is built with `with_target(false)` and no per-crate filter, so `APC_LOG=debug` also
+  prints hyper/reqwest internals (`connecting to …`, `pooling idle connection`). Filtering needs
+  `tracing-subscriber`'s `env-filter`/`Targets`; not worth it until the noise actually hurts.
 - `.env` is read only in debug builds, from the process's current directory, by `load_dotenv` in
   `crates/apc-cli/src/main.rs` (no dependency; `KEY=VALUE`, `#` comments, existing env wins). Release
   builds ignore it on purpose.

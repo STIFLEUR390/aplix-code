@@ -18,7 +18,7 @@
 | v0.3 | Agent loop + built-in tools + heuristic Permission Guard — **done** |
 | v0.3b | `open-jev` client for a local-jev sidecar behind a feature flag, `Cascade` fallback — **done** |
 | v0.4 | `apc model` + resumable downloads — **done** (empty catalog, SPEC §8.12) |
-| v0.5 | Opt-in telemetry: `tracing` logs + Sentry, off by default |
+| v0.5 | Opt-in telemetry: `tracing` logs + Sentry, off by default — **done** |
 | v1.0 | MVP: stable CLI, docs, CI, releases Linux/macOS/Windows |
 | v1.1 | `ratatui` TUI, intent classification, `skills/` |
 | v1.2 | SearXNG + Obscura plugins, dynamic plugin loading |

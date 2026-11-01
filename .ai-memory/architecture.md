@@ -198,9 +198,12 @@ Gates, in order: `telemetry` feature compiled (currently a **default** feature d
 *before* running the command so that a config that fails to load is itself reportable; `apc init` has
 no config yet, so it falls back to the env variable alone.
 
-Not implemented yet: the `tracing` fmt layer (arrives with the first real logs in v0.2) and
-`warn`/`error` breadcrumbs. Today Sentry receives explicit errors and, in debug builds, panics
-(`panic = "abort"` disables the panic hook in release).
+The `tracing` subscriber is installed **unconditionally** (`fmt` layer to stderr, level from
+`APC_LOG`, default `warn`), so local logs exist with no DSN and no network. Only when both gates hold
+is the `sentry-tracing` layer attached, filtering events to `warn`/`error`; Sentry also receives
+explicit command errors and, in debug builds, panics (`panic = "abort"` disables the hook in release).
+`apc-agent` emits the first real events: `tool call` (debug, name only), `unknown tool` / `tool failed`
+(warn), `agent stopped without a final answer` (warn).
 
 Rules: no DSN shipped, `APC_TELEMETRY=0` beats any DSN, no usage metrics
 (`auto_session_tracking: false`), never file/prompt/completion content. Libraries do not initialise a

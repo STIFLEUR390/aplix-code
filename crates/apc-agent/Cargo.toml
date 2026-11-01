@@ -13,3 +13,4 @@ apc-core.workspace = true
 apc-traits.workspace = true
 futures-util.workspace = true
 serde_json.workspace = true
+tracing.workspace = true
