@@ -2,11 +2,11 @@
 
 ## State of the repo (check before assuming anything)
 
-v1.3 is the current milestone: a Cargo workspace (`crates/*`, 9 crates) whose crates all hold code —
+v2.0's server is done; only the Tauri window is missing (see below). A Cargo workspace (`crates/*`, 9 crates) whose crates all hold code —
 `apc-core` (config + chat types), `apc-traits` (every trait), `apc-models` (HTTP adapters, SSE),
 `apc-memory` (SQLite sessions with FTS5), `apc-decision` (heuristic guard + model store), `apc-tools`
 (file tools + guarded shell), `apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli`
-(`init`, `config`, `run`, `chat` (REPL or full-screen view), `model`, `--version`). CI and tagged
+(`init`, `config`, `run`, `chat` (REPL or full-screen view), `model`, `serve`, `--version`). CI and tagged
 cross-platform releases live in `.github/workflows/`. Hooks and context compaction do **not** exist
 yet. Read the tree before assuming a module exists.
 
@@ -112,7 +112,10 @@ Before starting one, read its acceptance criteria — they name the traps that b
   `sessions/*.jsonl` first. `rusqlite` **was** absent from this machine's cargo cache (a ~46 KB/s
   download, not the 3 KB/s of the rig spike), and 0.40 dropped `bundled` while 0.41 needs Rust 1.89
   — do not bump without checking both.
-- **v2.0** `apc serve`: axum 0.7 and tauri 2.11 *are* cached; loopback + token, guard over the API.
+- **v2.0** `apc serve` — **done** (SPEC §8.15): axum 0.7, loopback only, Bearer token in
+  `serve.token`, the guard answered over `POST /v1/confirm`. The Tauri client is **not** written:
+  `pkg-config` finds no `webkit2gtk-4.1`, `libsoup-3.0` or `gtk+-3.0` here, and installing them needs
+  sudo. The crates are cached, the system libraries are not.
 - **v2.1** sandboxing: `landlock`, `wasmtime` and `extism` are **not** cached either.
 
 Cache absence is not fatal — it costs a slow download (~3 KB/s here) — but it must be disclosed
@@ -196,6 +199,28 @@ still exists in `main::repl` and must keep working.
   single-flowing and a poisoned mutex here means one bad query, not corrupt data.
 - `MemoryStore` stays async although these calls are tiny.
 
+## Serve (v2.0)
+
+`crates/apc-cli/src/serve.rs` is the API; `main.rs`'s `agent`, `apply_skill` and `apply_memory` are
+`pub(crate)` so it calls the same code as `apc chat`. Never copy the loop into the server.
+
+- **Loopback is not configurable.** `TcpListener::bind((Ipv4Addr::LOCALHOST, port))`; `--port`
+  (default 7717) is the only knob. A test asserting 401 without the token is what closes the door.
+- **Token**: 64 hex chars from `RandomState` (256 bits, no new dependency), in
+  `data_dir/serve.token`, `0600`, regenerated if a stored one is shorter than 32. Header is
+  `Authorization: Bearer <token>`, checked in `middleware::from_fn_with_state`.
+- **`POST /v1/run` is SSE.** `{"delta"}` fragments, then `{"done":true,"session"}`, or `{"error"}` —
+  a stream that has started cannot turn into a status code. The prompt is persisted *before* the
+  provider is called and the agent's tail is persisted after, exactly like `apc chat`.
+- **The guard is `ApiApprover`**: sends `{"ask":{id,command,risk}}` and blocks on a `std::sync::mpsc`
+  reply answered by `POST /v1/confirm {id, allow}`; `ASK_TIMEOUT` (120 s) refuses. `confirm` is
+  synchronous, so this blocks a runtime thread — that is the `shortcut:` comment in the file.
+- `GET /v1/sessions` is `SqliteStore::sessions()` (`session`, `messages`), `GET /v1/config` is the
+  resolved `Config` as JSON (`SessionId` gained `Serialize`/`Deserialize` for this).
+- `tests/serve.rs` re-declares its own helpers (separate binary, no dev-dependencies) and speaks
+  HTTP/1.1 over `std::net::TcpStream`; the provider is the same one-shot `TcpListener` SSE stub.
+  The server child is started with a sandboxed `XDG_DATA_HOME` and killed by `Drop`.
+
 ## Config — the shipped feature
 
 - `apc-core::config` owns the schema and the precedence order; `apc-cli` only wires paths, env vars
@@ -244,7 +269,7 @@ still exists in `main::repl` and must keep working.
     whenever a dependency is updated.
   - Measured at v1.3: the release binary without telemetry is 10 054 128 B, up ~1.9 MB from
     8 147 656 B — bundled SQLite is that cost, and it is the price of the no-system-dependency
-    promise. Still 5.6 MB below the gate.
+    promise. At v2.0 (axum) it is **10 455 728 B**, so ~5.2 MB below the gate.
 - **CI is the contract** (`.github/workflows/ci.yml`): `fmt`, `clippy -D warnings` and `test` in
   **three feature shapes** — default, `--features open-jev`, `--features telemetry` — plus a
   release build on Linux/macOS/Windows with a 15 MB size gate (`wc -c` < 15728640, `apc.exe` on
@@ -275,6 +300,7 @@ cargo build --offline                    # this machine cannot reach crates.io a
 cargo test --workspace
 cargo test -p apc-core config            # single crate / single test (substring match)
 cargo test -p apc-cli --test cli         # CLI end-to-end, incl. a local SSE stub server
+cargo test -p apc-cli --test serve       # `apc serve`: token, SSE run, sessions, config
 cargo test -p apc-memory                 # SQLite round trip, FTS5 search, JSONL import, read-only db
 cargo test -p apc-decision               # guard patterns + the resumable model download
 cargo test -p apc-tools                  # path confinement + a refused confirmation runs nothing
@@ -339,7 +365,7 @@ streaming over direct HTTP adapters (**done**) → v0.2b session memory JSONL (*
 loop, tools and the heuristic Permission Guard (**done**) → v0.3b `open-jev` sidecar behind the
 feature flag (**done**) → v0.4 `apc model` + resumable downloads (**done**, empty catalog) → v0.5
 telemetry off/on → v1.0 MVP. TUI (`ratatui`, v1.1), intent classification, `skills/`, SearXNG/Obscura (v1.2),
-long-term memory (v1.3), `apc serve` + Tauri (v2.0), sandboxing/WASM (v2.1) are all **post-MVP** —
+long-term memory (v1.3), the Tauri client (v2.0), sandboxing/WASM (v2.1) are all **post-MVP** —
 don't scaffold them for an MVP task.
 
 ## MCP: kaneo (task tracking)

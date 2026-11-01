@@ -123,7 +123,8 @@ pub enum ChatEvent {
 pub type ChatStream = Pin<Box<dyn Stream<Item = Result<ChatEvent>> + Send>>;
 
 /// Identifier of a persisted conversation. The store decides the format.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct SessionId(String);
 
 impl SessionId {

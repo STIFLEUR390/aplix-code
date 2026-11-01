@@ -54,7 +54,7 @@
 
 - `rusqlite` is pinned **0.39 with `bundled`**: 0.40 dropped `bundled` (the no-system-dependency
   promise dies with it) and 0.41 needs Rust 1.89 while the floor is 1.80. Bumping means rechecking
-  both, and re-measuring the binary (10 054 128 B at v1.3, gate 15 728 640).
+  both, and re-measuring the binary (10 054 128 B at v1.3, 10 455 728 B at v2.0, gate 15 728 640).
 - Bundled SQLite compiles FTS5 in (`-DSQLITE_ENABLE_FTS5` in `libsqlite3-sys` build.rs). A schema
   change that drops `messages_fts` also drops search: `MemoryStore::search` is a required trait
   method, so a store without it does not compile.

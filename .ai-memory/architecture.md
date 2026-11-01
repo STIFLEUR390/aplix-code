@@ -217,6 +217,30 @@ via clap `Args`. No precedence logic there.
 - `--continue` prints `continuing session <id> (N messages)` to stderr, then replays into context.
 - One `rusqlite::Connection` behind a `Mutex`; poisoned locks are recovered.
 
+## Serve (v2.0)
+
+`crates/apc-cli/src/serve.rs`: `apc serve --port 7717` puts the same agent on loopback.
+
+- The handler calls `main::agent`, `main::apply_skill` and `main::apply_memory` (all `pub(crate)`) and
+  the same `SqliteStore`, so the server and `apc chat` cannot drift. Nothing is re-implemented.
+- `TcpListener::bind((Ipv4Addr::LOCALHOST, port))` — loopback is not a setting. Everything is behind
+  `middleware::from_fn_with_state(token, require_token)`: `Authorization: Bearer <token>`, else 401.
+- The token is 64 hex chars from `std::collections::hash_map::RandomState` (256 bits, no new dep),
+  in `ProjectDirs…/serve.token`, chmod `0600`, regenerated when a stored one is under 32 chars.
+- `POST /v1/run {prompt, session?}` → `text/event-stream`: `{"delta":"…"}` per fragment,
+  `{"done":true,"session":"…"}`, or `{"error":"…"}` (a started stream cannot send a status code).
+  The prompt is appended before the provider call, the assistant tail after the run.
+- `GET /v1/sessions` → `[{"session","messages"}]` (from `SqliteStore::sessions()`);
+  `GET /v1/config` → the resolved `Config` (`SessionId` derives serde for this).
+- `ApiApprover` replaces `StdinApprover`: it emits `{"ask":{"id","command","risk"}}`, parks a
+  `std::sync::mpsc::Sender<bool>` in `Server::pending`, and `POST /v1/confirm {id, allow}` answers it.
+  `receiver.recv_timeout(120s)` that expires = refused. `Approver::confirm` is sync, so the wait
+  blocks a runtime thread (`shortcut:` comment in the file; one thread per live question).
+- `tests/serve.rs` is its own binary: helpers re-declared, HTTP/1.1 written by hand over
+  `std::net::TcpStream`, provider faked by the one-shot `TcpListener` SSE stub, child killed by `Drop`.
+- The Tauri client is **not** written: `webkit2gtk-4.1`, `libsoup-3.0` and `gtk+-3.0` are missing here
+  and installing them needs sudo.
+
 ## Telemetry (Sentry)
 
 Implemented in `crates/apc-cli/src/telemetry.rs` (the whole crate is the composition root, per SPEC
@@ -242,5 +266,5 @@ client; only `apc-cli` does.
 
 ## Post-MVP (do not build during an MVP task)
 
-`apc serve` + Tauri (v2.0), Landlock/Seatbelt or WASM sandboxing (v2.1), vector recall over past
-sessions (`sqlite-vec`, needs local embeddings), dynamic plugin loading.
+Tauri client over `apc serve` (v2.0), Landlock/Seatbelt or WASM sandboxing (v2.1), vector recall over
+past sessions (`sqlite-vec`, needs local embeddings), dynamic plugin loading.

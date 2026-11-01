@@ -21,6 +21,7 @@ apc-tools = { path = "crates/apc-tools", version = "1.0.0" }
 apc-traits = { path = "crates/apc-traits", version = "1.0.0" }
 anyhow = "1"
 async-trait = "0.1"
+axum = "0.7"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"
@@ -60,7 +61,7 @@ sentry = { version = "0.48", default-features = false, features = [
   "tracing",
 ] }
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 toml = "0.8"
 
 # SPEC.md §6: latency first, size from strip/lto/abort.

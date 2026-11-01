@@ -14,6 +14,7 @@ use apc_core::config::{self, Layer, Loaded, Source};
 use apc_memory::SqliteStore;
 use apc_traits::{Approver, DecisionProvider, MemoryStore};
 
+mod serve;
 mod telemetry;
 mod tui;
 
@@ -61,6 +62,8 @@ enum Command {
     Chat(ChatArgs),
     /// Manage the local decision models.
     Model(ModelArgs),
+    /// Serve the agent on 127.0.0.1 for a UI client.
+    Serve(ServeArgs),
 }
 
 #[derive(Args)]
@@ -98,6 +101,15 @@ struct ChatArgs {
     /// Resume the most recent session.
     #[arg(long)]
     r#continue: bool,
+    #[command(flatten)]
+    overrides: Overrides,
+}
+
+#[derive(Args)]
+struct ServeArgs {
+    /// Port on loopback.
+    #[arg(long, default_value_t = 7717)]
+    port: u16,
     #[command(flatten)]
     overrides: Overrides,
 }
@@ -183,6 +195,10 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Run(args) => run_prompt(&args).await,
         Command::Chat(args) => chat(&args).await,
         Command::Model(args) => model(&args).await,
+        Command::Serve(args) => {
+            let (loaded, _) = resolve(&args.overrides)?;
+            serve::serve(loaded.config, args.port).await
+        }
     }
 }
 
@@ -193,6 +209,7 @@ fn overrides(command: &Command) -> Option<&Overrides> {
         Command::Run(args) => Some(&args.overrides),
         Command::Chat(args) => Some(&args.overrides),
         Command::Model(_) => None,
+        Command::Serve(args) => Some(&args.overrides),
     }
 }
 
@@ -311,7 +328,7 @@ fn print_delta(event: &ChatEvent) {
 ///
 /// Skills are Markdown files at `<root>/skills/<name>.md` (SPEC.md §7). A missing file means no
 /// skill, never an error. The message is not persisted: it is re-derived from each prompt.
-fn apply_skill(messages: &mut Vec<Message>, root: &std::path::Path, prompt: &str) {
+pub(crate) fn apply_skill(messages: &mut Vec<Message>, root: &std::path::Path, prompt: &str) {
     let Some(name) = apc_decision::classify(prompt).skill() else {
         return;
     };
@@ -326,7 +343,7 @@ fn apply_skill(messages: &mut Vec<Message>, root: &std::path::Path, prompt: &str
 ///
 /// The session being written is left out: its messages are already in the conversation. A store
 /// that cannot answer is not an error here — the turn goes on without recall.
-async fn apply_memory(
+pub(crate) async fn apply_memory(
     store: &SqliteStore,
     messages: &mut Vec<Message>,
     session: &apc_core::chat::SessionId,
@@ -369,7 +386,7 @@ fn decision_provider(_endpoint: Option<&str>) -> std::sync::Arc<dyn DecisionProv
     std::sync::Arc::new(apc_decision::HeuristicProvider)
 }
 
-fn agent(
+pub(crate) fn agent(
     config: &config::Config,
     approver: std::sync::Arc<dyn Approver>,
 ) -> Result<apc_agent::Agent> {

@@ -39,6 +39,7 @@ Objectifs mesurables :
 | `apc model <cmd>` | Gère les modèles de décision locaux : `list`, `download`, `status`, `verify`, `remove`. | **P0** |
 | `apc --version` / `-V` | Version de `apc` **et** du modèle de décision chargé. | **P0** |
 | `apc config` | Affiche la configuration effective et sa provenance par couche. | **P1** |
+| `apc serve` | Sert le même agent sur `127.0.0.1` pour un client (Tauri, éditeur) : flux SSE, sessions, config, confirmations. | **P2** (v2.0) |
 
 `apc chat --continue` reprend la dernière session.
 
@@ -245,6 +246,7 @@ pub trait Plugin: Send + Sync {
 | Async | `tokio` | Runtime de `reqwest` et des commandes. |
 | Télémétrie (opt-in) | `sentry` + `tracing` + `tracing-subscriber` (feature `telemetry`, off par défaut) | Voir §3.4 et §8.9 ; `sentry` n'est compilé que si la feature est active, pour ne pas peser sur le budget de 15 Mo. |
 | TUI (V1.1) | `ratatui` + `crossterm` | Hors MVP. |
+| Serveur local (v2.0) | `axum` 0.7 | Voir §8.15 : même `Agent`, mémoire et guard que la CLI. |
 
 Profil de release :
 
@@ -274,7 +276,7 @@ opt-level = 3      # voir §8.5 : la vitesse primait sur la taille
 | v1.2 | Plugins de recherche web (SearXNG) et d'extraction (Obscura) |
 | v1.2b | Décider si `rig` remplace nos adapters et notre boucle d'agent (voir §8.2) — **fait : non** |
 | v1.3 | Mémoire long terme (SQLite + FTS5 ou `sqlite-vec`) — **fait** : SQLite + FTS5, JSONL importé (§8.14) |
-| v2.0 | `apc serve` (serveur HTTP local) + application Tauri |
+| v2.0 | `apc serve` (serveur HTTP local) + application Tauri — **`apc serve` fait** (§8.15) ; le client Tauri n'est pas compilable sans les paquets GTK/WebKit de la machine |
 | v2.1 | Sandboxing avancé (`landlock`/`seatbelt`) ou plugins WASM |
 
 ---
@@ -546,11 +548,44 @@ vectorielle n'aurait rien à indexer. Le rappel est du FTS5 pur : chaque mot de 
 meilleurs résultats des autres sessions en tête du prompt. Une requête sans mot d'au moins trois
 caractères ne renvoie rien, et une erreur du magasin ne fait pas échouer le tour.
 
+
+### 8.15 `apc serve` réutilise le client, il ne le double pas
+
+`crates/apc-cli/src/serve.rs` monte l'API autour du code qui existait déjà : `agent()`,
+`apply_skill()` et `apply_memory()` passent en `pub(crate)` et servent la CLI comme le serveur, avec
+le même `SqliteStore` et le même `apc_agent::Agent`. Aucune logique n'est dupliquée, donc un
+correctif dans la boucle ou la mémoire vaut pour les deux.
+
+**Loopback uniquement, avec un jeton.** `TcpListener::bind((Ipv4Addr::LOCALHOST, port))` : il n'y a
+pas d'option pour écouter ailleurs, ce qui rend l'assertion « aucun port au-delà de la boucle
+locale » vraie par construction. Le jeton fait 64 caractères hexadécimaux, générés à partir de
+`RandomState` (256 bits, sans dépendance supplémentaire — le seul usage de `std` pour du hasard
+cryptographique de cette taille, et il suffit : ce n'est pas une clé de chiffrement) et écrit dans
+`data_dir/serve.token` en `0600`. Un jeton de fichier plus court que 32 caractères est régénéré.
+L'en-tête attendu est `Authorization: Bearer <token>` ; tout le reste est `401`.
+
+**Un seul flux, des événements JSON.** `POST /v1/run {prompt, session?}` répond en `text/event-stream`
+avec `{"delta":"…"}` par fragment puis `{"done":true,"session":…}`. Le flux a déjà commencé quand une
+erreur survient, donc l'erreur est un événement `{"error":"…"}` et jamais un code HTTP. La commande
+destructive, elle, publie `{"ask":{"id":…,"command":…,"risk":…}}` et attend `POST /v1/confirm
+{id, allow}` ; sans réponse au bout de 120 s, elle est refusée. `Approver::confirm` étant
+synchrone, l'attente bloque un thread du runtime — c'est le même compromis que `TuiApprover`, et il
+est marqué `shortcut:` dans le code.
+
+**Tauri est reporté, pas oublié.** `tauri` 2.11 et ses plugins sont dans le cache cargo, mais
+`pkg-config --exists webkit2gtk-4.1` (comme `libsoup-3.0` et `gtk+-3.0`) échoue sur la machine de
+développement, et l'installation demande `sudo`. Le serveur est donc écrit, testé et livré seul : un
+client qui parle ce protocole n'a plus qu'à exister.
+
+**Coût mesuré :** `axum` 0.7 ajoute `axum`, `axum-core`, `matchit`, `mime` et `serde_path_to_error`
+au graphe (5 paquets ; `hyper`, `tower`, `http-body` étaient déjà là pour `reqwest`), et le binaire
+release passe de 10 054 128 à **10 455 728** octets — toujours sous la barre des 15 Mo.
+
 ---
 
 ## 9. Hors périmètre V1 (explicite)
 
-1. Application Tauri (l'architecture la prépare via `apc serve`, aucun code écrit).
+1. Application Tauri : `apc serve` existe (§8.15), la fenêtre n'est pas écrite — elle ne se lie pas sans `webkit2gtk-4.1`, `libsoup-3.0` et `gtk+-3.0`.
 2. Recherche web (SearXNG) et extraction (Obscura, Firecrawl, Crawl4AI).
 3. Knowledge graph et distillation de la mémoire : la v1.3 livre SQLite + FTS5, rien de plus.
 4. Chargement dynamique de plugins (`.so`/`.dylib`/WASM) : les traits existent, les plugins V1 sont

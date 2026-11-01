@@ -88,7 +88,8 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 - Vector recall over past sessions (`sqlite-vec`), once embeddings are computed locally.
 - JavaScript-rendered page extraction (CDP or `obscura mcp --http`, `SPEC.md` §8.13).
 - Dynamic plugin loading (native `.so` or WASM).
-- `apc serve` — local HTTP server, for editor integrations.
+- `apc serve` — local HTTP server (loopback + token, SSE), for editor integrations. Shipped in
+  `v2.0`; the desktop client is still to come.
 - **Tauri desktop app** (a thin client over `apc serve`).
 - Advanced sandboxing (Landlock / Seatbelt).
 

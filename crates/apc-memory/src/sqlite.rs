@@ -88,6 +88,29 @@ impl SqliteStore {
         .map_err(|source| db_error(&self.path, source))
     }
 
+    /// Every session with its message count, newest first. Empty sessions are left out.
+    pub fn sessions(&self) -> Result<Vec<(SessionId, usize)>> {
+        let conn = self.conn();
+        let mut statement = conn
+            .prepare(
+                "SELECT session, COUNT(*) FROM messages GROUP BY session ORDER BY session DESC",
+            )
+            .map_err(|source| db_error(&self.path, source))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    SessionId::new(row.get::<_, String>(0)?),
+                    row.get::<_, i64>(1)? as usize,
+                ))
+            })
+            .map_err(|source| db_error(&self.path, source))?;
+        let mut sessions = Vec::new();
+        for row in rows {
+            sessions.push(row.map_err(|source| db_error(&self.path, source))?);
+        }
+        Ok(sessions)
+    }
+
     /// Imports every JSONL session file the database does not know yet, and returns how many.
     ///
     /// Idempotent: a session already stored is skipped, so re-running costs one query per file. A
@@ -270,7 +293,11 @@ mod tests {
             store.load(Some(&session)).await.expect("load"),
             vec![Message::user("bonjour"), Message::assistant("salut")]
         );
-        assert_eq!(store.latest_session().expect("latest"), Some(session));
+        assert_eq!(
+            store.latest_session().expect("latest"),
+            Some(session.clone())
+        );
+        assert_eq!(store.sessions().expect("sessions"), vec![(session, 2)]);
     }
 
     #[tokio::test]

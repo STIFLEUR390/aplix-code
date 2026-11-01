@@ -29,11 +29,14 @@ apc-models.workspace = true
 apc-plugins.workspace = true
 apc-traits.workspace = true
 anyhow.workspace = true
+axum.workspace = true
 clap.workspace = true
 crossterm.workspace = true
 directories.workspace = true
 futures-util.workspace = true
 ratatui.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 sentry = { workspace = true, optional = true }
 tokio.workspace = true
 toml.workspace = true

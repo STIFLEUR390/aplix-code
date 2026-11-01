@@ -123,11 +123,28 @@ apc model download <id>         # resumes a .part, verifies SHA-256, then rename
 apc model status <id>
 apc model verify <id>
 apc model remove <id>
+apc serve [--port 7717]         # v2.0: loopback API, token in data dir (see below)
 ```
 
 Models and sessions live under `${XDG_DATA_HOME:-~/.local/share}/aplix/`
 (`models/<id>.bin` with `<id>.bin.part` while downloading, `memory.db` for every conversation,
-plus any pre-v1.3 `sessions/<id>.jsonl`, imported on first run and then left alone).
+plus any pre-v1.3 `sessions/<id>.jsonl`, imported on first run and then left alone, and
+`serve.token` once `apc serve` has run).
+
+## Serve (v2.0)
+
+```bash
+apc serve --port 7717                                  # prints the address; token in data dir
+curl -H "Authorization: Bearer $(cat ~/.local/share/aplix/serve.token)" localhost:7717/v1/config
+curl -N -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"prompt":"salut"}' localhost:7717/v1/run        # SSE: delta / done / error / ask
+curl -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"id":1,"allow":false}' localhost:7717/v1/confirm # answers a destructive command
+cargo test -p apc-cli --test serve                     # token, SSE run, sessions, config
+```
+
+`serve.token` is 64 hex chars, `0600`; delete it to force a rotation. No header = 401, and there is no
+flag to listen anywhere but `127.0.0.1`.
 
 ## Telemetry (Sentry)
 

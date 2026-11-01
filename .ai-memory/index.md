@@ -43,6 +43,8 @@ for the README's version of a §8 decision, say why it was changed instead of si
 
 ## Hard rules
 
+- **v2.0's server is in place** (`apc serve`, SPEC §8.15); the Tauri client is missing because this
+  machine has no `webkit2gtk-4.1`/`libsoup-3.0`/`gtk+-3.0` and installing them needs sudo.
 - **v1.0 is in place.** Cargo workspace at `crates/*` (9 crates, `resolver = "2"`, edition 2021,
   MSRV 1.80), every crate holds code: config, traits, HTTP adapters, SQLite + FTS5 sessions, heuristic guard
   + `open-jev` sidecar client, the resumable model store, file/shell tools, the agent loop, the tool
