@@ -34,7 +34,11 @@ changing callers.
 #[async_trait]
 pub trait ModelAdapter: Send + Sync {
     async fn chat(&self, messages: &[Message], tools: &[Tool]) -> Result<ChatStream>;
+    fn model(&self) -> &str;
 }
+```
+(The v0.2 signature actually shipped is `chat(&self, messages: &[Message])` + `model()`; tools enter
+the trait in v0.3.)
 
 #[async_trait]
 pub trait DecisionProvider: Send + Sync {
@@ -104,14 +108,29 @@ Guard only).
 `apc-cli::main` owns the I/O: `ProjectDirs::from("dev", "aplix", "aplix")` for the user file, flags
 via clap `Args`. No precedence logic there.
 
-## Providers
+## Providers (v0.2, shipped)
 
-Through `genai`: OpenAI, Anthropic, Gemini, Ollama, DeepSeek, OpenRouter, Groq. Provider + model in
-`apc.toml`; keys from env (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …).
+`apc-models` speaks HTTP directly — `genai` was dropped (SPEC §8.10). Two dialects:
+
+| Dialect | Providers | Endpoint | Auth |
+| :--- | :--- | :--- | :--- |
+| `OpenAi` | openai, deepseek, openrouter, groq, ollama | `{base}/chat/completions` | `Authorization: Bearer` (none for ollama) |
+| `Anthropic` | anthropic | `{base}/messages` | `x-api-key` + `anthropic-version: 2023-06-01` |
+
+- `defaults()` in `crates/apc-models/src/lib.rs` maps name → (dialect, default base URL, key var);
+  `provider.base_url` overrides the URL, which is how the local relay is used.
+- Gemini is refused with an explanatory error: it needs a third dialect (v1.1+).
+- `ChatStream` = `Pin<Box<dyn Stream<Item = Result<ChatEvent>> + Send>>`; `ChatEvent::{Delta, Done}`.
+  `apc-cli::print_stream` writes and flushes each delta.
+- `sse.rs` holds the `text/event-stream` splitter (`Sse::push(&mut self, chunk) -> Vec<String>`), unit
+  tested on chunk boundaries, CRLF and comments.
+- A 200 response whose body is not an event stream is converted into an error carrying the first
+  200 chars — a wrong `base_url` otherwise streams nothing and exits 0.
 
 ## Session memory
 
-JSONL under `${XDG_DATA_HOME:-~/.local/share}/aplix/sessions/`, one file per session. `apc chat
+Not implemented yet (v0.2b): `apc chat` keeps `Vec<Message>` in memory and `--continue` bails.
+Target state: JSONL under `${XDG_DATA_HOME:-~/.local/share}/aplix/sessions/`, one file per session. `apc chat
 --continue` reloads the latest. No long-term memory in V1 (v1.3).
 
 ## Telemetry (Sentry)

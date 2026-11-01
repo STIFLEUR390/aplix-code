@@ -9,6 +9,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+futures-core.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 toml.workspace = true

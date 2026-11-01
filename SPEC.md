@@ -76,8 +76,9 @@ première compilation, et elle reste le filet de sécurité en production.
 
 - **Abstraction** : un trait unique `ModelAdapter` exposant
   `chat(messages, tools) -> Stream<Response>` (streaming dès la V1, voir §8.3).
-- **Fournisseurs P0** via [`genai`](https://crates.io/crates/genai) : OpenAI, Anthropic, Gemini,
-  Ollama, DeepSeek, OpenRouter, Groq.
+- **Fournisseurs P0** : OpenAI, Anthropic, Ollama, DeepSeek, OpenRouter, Groq — parlés en HTTP
+  direct, via les deux dialectes réellement utilisés (`/chat/completions` compatible OpenAI,
+  `/messages` Anthropic). Voir §8.10. Gemini attend son propre dialecte (non implémenté en v0.2).
 - **Configuration** : provider et modèle dans `apc.toml`. Les clés API viennent de l'environnement
   (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …), jamais du fichier de config commité.
 
@@ -220,7 +221,7 @@ pub trait Plugin: Send + Sync {
 | Composant | Crate(s) | Justification |
 | :--- | :--- | :--- |
 | Parsing CLI | `clap` (derive) | Standard de facto, mature. |
-| Multi-providers LLM | `genai` | Couverture large, protocoles natifs, API unifiée, streaming. |
+| Multi-providers LLM | `reqwest` + `futures` (adaptateurs propres) | Voir §8.10 : deux dialectes suffisent, `genai` écarté. |
 | Boucle d'agent | implémentation propre dans `apc-agent` | Voir §8.2 : `rig-core` écarté. |
 | Décision locale | `local-jev` (derrière un feature flag) + heuristique | Voir §8.1. |
 | Téléchargement modèle | `reqwest` + `sha2` + `futures` | Voir §8.4 : reprise `Range` et digest faits à la main. |
@@ -228,7 +229,7 @@ pub trait Plugin: Send + Sync {
 | Mémoire de session | `serde_json` + `std::fs` (JSONL) | Simple, robuste, débuggable. Pas de base pour le MVP. |
 | Chemins | `directories` | Respect de `XDG_DATA_HOME` / `%APPDATA%` / `~/Library`. |
 | Erreurs | `thiserror` (libs) + `anyhow` (CLI) | Séparation erreurs de bibliothèque / applicatives. |
-| Async | `tokio` | Compatible `genai`, `reqwest`. |
+| Async | `tokio` | Runtime de `reqwest` et des commandes. |
 | Télémétrie (opt-in) | `sentry` + `tracing` + `tracing-subscriber` (feature `telemetry`, off par défaut) | Voir §3.4 et §8.9 ; `sentry` n'est compilé que si la feature est active, pour ne pas peser sur le budget de 15 Mo. |
 | TUI (V1.1) | `ratatui` + `crossterm` | Hors MVP. |
 
@@ -250,7 +251,7 @@ opt-level = 3      # voir §8.5 : la vitesse primait sur la taille
 | Version | Contenu |
 | :--- | :--- |
 | v0.1 | Squelette du workspace, `apc init`, résolution de config, `apc config` |
-| v0.2 | `apc run` + `apc chat` (REPL texte) via `genai`, streaming |
+| v0.2 | `apc run` + `apc chat` (REPL texte), streaming SSE, adaptateurs HTTP directs |
 | v0.3 | Permission Guard : heuristique puis `open-jev` + fallback |
 | v0.4 | `apc model` + téléchargement reprenable |
 | v0.5 | Télémétrie opt-in : logs `tracing` locaux + Sentry désactivé par défaut |
@@ -285,20 +286,19 @@ Le cahier des charges initial proposait `rig-core` pour les abstractions **et** 
 providers. Les deux sont des frameworks LLM complets, chacun avec ses propres `Message`, `Tool` et
 formats de réponse : les combiner impose une couche de conversion permanente, deux jeux de types à
 maintenir, et surtout **enferme `apc-traits` dans les types de `rig`** — l'inverse de « tout est
-plugin ». `apc-core` définit ses propres types ; `apc-models` les adapte à `genai`. Une centaine de
+plugin ». `apc-core` définit ses propres types et `apc-models` les traduit en HTTP. Une centaine de
 lignes de boucle ReAct écrites à la main coûtent moins cher que cette dépendance.
 
 ### 8.3 Le streaming est dans le trait dès la V1
 
 `chat` renvoie un flux, pas une réponse complète. Rétrofitter le streaming plus tard obligerait à
 modifier le trait, l'agent et le CLI en même temps ; et un agent muet pendant 30 s est une mauvaise
-expérience. `genai` expose déjà le streaming. `apc run` peut simplement collecter le flux pour
-afficher un résultat unique.
+expérience. `apc run` affiche le flux au fur et à mesure ; `apc chat` fait de même, tour après tour.
 
 ### 8.4 Pas de `http-ferry` : `reqwest` + `sha2`
 
-`http-ferry` est peu connu et non vérifié ; `reqwest` est déjà une dépendance transitive de `genai`
-et gère `Range`. La reprise + SHA-256 représente ~100 lignes testables, contre une dépendance
+`http-ferry` est peu connu et non vérifié ; `reqwest` gère `Range` et sert déjà aux appels LLM
+(§8.10). La reprise + SHA-256 représente ~100 lignes testables, contre une dépendance
 supplémentaire au budget de taille et à la surface d'audit.
 
 ### 8.5 `opt-level = 3`, pas `"z"`
@@ -338,6 +338,33 @@ son propre DSN. Les deux coexistent à trois conditions, toutes vérifiables dan
 **désactivée par défaut**, **aucun DSN livré**, **jamais de contenu utilisateur**. C'est la seconde
 sortie réseau possible après le provider LLM, et elle est nulle tant que l'utilisateur ne l'a pas
 armée. Le README et `AGENTS.md` sont alignés sur cette exception.
+
+### 8.10 `genai` est écarté au profit d'adaptateurs HTTP directs
+
+Le cahier des charges prévoyait `genai` pour couvrir sept fournisseurs. Deux raisons l'ont fait
+tomber au moment d'implémenter la v0.2 :
+
+1. **Le besoin réel est plus étroit.** Six des sept fournisseurs cibles parlent le dialecte OpenAI
+   `/chat/completions` (OpenAI, DeepSeek, OpenRouter, Groq, Ollama, plus toute passerelle locale
+   compatible) ; Anthropic a son propre `/messages`. Deux corps de requête et deux lecteurs SSE
+   couvrent donc tout le P0, en ~250 lignes testables hors ligne.
+2. **Le coût d'entrée mesurable.** `genai` n'était pas dans le cache local et crates.io répondait à
+   ~4 Ko/s sur la machine de développement : l'arbre de dépendances (SDK cloud, résolveurs d'auth,
+   son propre TLS) n'était pas installable dans un délai raisonnable. Ce n'est pas un argument
+   d'architecture, mais c'est une donnée : la dépendance pèse plus que le code qu'elle remplace.
+
+Conséquences assumées :
+
+- `apc-models` possède son `reqwest::Client` et son `ModelAdapter` (`apc-traits`), avec streaming
+  SSE dès la v0.2.
+- **Gemini n'est pas implémenté** : `provider.name = "gemini"` renvoie une erreur explicite. Son
+  protocole (`generateContent`, streaming par `?alt=sse`) est un troisième dialecte, à ajouter quand
+  le besoin apparaît.
+- Les clés API se lisent dans `APC_API_KEY` puis dans la variable du fournisseur
+  (`OPENAI_API_KEY`, …), jamais dans `apc.toml`. `provider.base_url` (ou `APC_BASE_URL`) permet de
+  pointer une passerelle locale.
+- Si un fournisseur exotique (Bedrock, Vertex, Cohere) devient nécessaire, réévaluer `genai` à ce
+  moment-là plutôt que de réimplémenter son SDK.
 
 ---
 

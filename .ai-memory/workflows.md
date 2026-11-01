@@ -13,7 +13,7 @@
 | Version | Milestone |
 | :--- | :--- |
 | v0.1 | Workspace skeleton, `apc init`, config resolution, `apc config` — **done** |
-| v0.2 | `apc run` + `apc chat` (plain REPL) via `genai`, streaming |
+| v0.2 | `apc run` + `apc chat` (plain REPL), streaming over direct HTTP adapters — **done** (no `genai`, SPEC §8.10) |
 | v0.3 | Permission Guard: heuristic, then `open-jev` + fallback |
 | v0.4 | `apc model` + resumable downloads |
 | v0.5 | Opt-in telemetry: `tracing` logs + Sentry, off by default |

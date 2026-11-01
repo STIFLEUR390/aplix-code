@@ -23,9 +23,11 @@ pub const TEMPLATE: &str = r#"# apc.toml — Aplix Code project configuration.
 telemetry = false
 
 [provider]
-# openai | anthropic | gemini | ollama | deepseek | openrouter | groq
+# openai | anthropic | deepseek | openrouter | groq | ollama
 name = "anthropic"
 model = "claude-sonnet-4-5"
+# endpoint override, e.g. a local gateway (APC_BASE_URL)
+# base_url = "http://127.0.0.1:31415/v1"
 
 [decision]
 # Shell commands with P(destructive) above this threshold ask for confirmation.
@@ -52,6 +54,9 @@ pub struct Provider {
     pub name: String,
     /// Model identifier passed to that provider.
     pub model: String,
+    /// Override the provider's default endpoint (local gateways, proxies).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
 }
 
 impl Default for Provider {
@@ -59,6 +64,7 @@ impl Default for Provider {
         Self {
             name: "anthropic".to_owned(),
             model: "claude-sonnet-4-5".to_owned(),
+            base_url: None,
         }
     }
 }

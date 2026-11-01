@@ -37,11 +37,12 @@ cargo test precedence -- --nocapture       # one test + stdout
 test (`std::env::temp_dir()/apc-cli-<pid>-<name>`), so it needs no extra dev-dependency and never
 reads the developer's real config.
 
-## Workspace shape (v0.1)
+## Workspace shape (v0.2)
 
 Root `Cargo.toml`: `members = ["crates/*"]`, `resolver = "2"`, `[workspace.package]` (version, edition
-2021, `rust-version = "1.80"`, MIT), `[workspace.dependencies]` (`apc-core`, `anyhow`, `clap`,
-`directories`, `serde`, `thiserror`, `toml` — add entries only when a crate uses them), plus the
+2021, `rust-version = "1.80"`, MIT), `[workspace.dependencies]` (`apc-core`, `apc-models`, `apc-traits`, `anyhow`, `async-trait`, `bytes`,
+`clap`, `directories`, `futures-core`, `futures-util`, `reqwest`, `sentry`, `serde`, `serde_json`,
+`thiserror`, `tokio`, `toml` — add entries only when a crate uses them), plus the
 release profile:
 
 ```toml
@@ -54,16 +55,19 @@ opt-level = 3
 ```
 
 Config paths: user `~/.config/aplix/apc.toml` (`ProjectDirs::from("dev", "aplix", "aplix")`), project
-`./apc.toml`, local `./apc.local.toml`, env `APC_PROVIDER`/`APC_MODEL`/`APC_PERMISSION_THRESHOLD`/
-`APC_TELEMETRY`, flags `--provider`/`--model`/`--permission-threshold`.
+`./apc.toml`, local `./apc.local.toml`, env `APC_PROVIDER`/`APC_MODEL`/`APC_BASE_URL`/
+`APC_PERMISSION_THRESHOLD`/`APC_TELEMETRY`, flags `--provider`/`--model`/`--permission-threshold`.
 
 `.env` at the repo root holds the local test values (git-ignored): `APC_PROVIDER=openai`,
-`APC_BASE_URL=http://127.0.0.1:31415`, `APC_API_KEY=…`, `APC_MODEL=auto`, `APC_SENTRY_DSN=…`.
-Nothing reads that file yet — no dotenv loader is wired in, and v0.1 only sees variables already
-exported in the shell:
+`APC_BASE_URL=http://127.0.0.1:31415/v1`, `APC_API_KEY=…`, `APC_MODEL=auto`, `APC_SENTRY_DSN=…`,
+`APC_TELEMETRY=1`. **Debug builds load it themselves** (`load_dotenv` in `crates/apc-cli/src/main.rs`);
+release builds and `cargo test` do not. The trailing `/v1` matters: the adapter appends
+`/chat/completions`, so a bare origin returns the relay's HTML page.
 
 ```bash
-set -a && . ./.env && set +a && cargo run -p apc-cli -- config
+cargo run -p apc-cli -- run "dis bonjour en un mot"   # streams the answer
+cargo run -p apc-cli -- chat                          # REPL, exit/quit/EOF
+printf 'Quelle est la capitale de la France ?\nquit\n' | cargo run -p apc-cli -- chat
 ```
 
 ## CLI surface
@@ -71,8 +75,8 @@ set -a && . ./.env && set +a && cargo run -p apc-cli -- config
 ```bash
 apc init                        # writes a commented apc.toml
 apc config                      # effective config + which layer set each key (P1)
-apc run "<prompt>"              # target (v0.2)
-apc chat [--continue]           # target (v0.2)
+apc run "<prompt>"              # v0.2, streams
+apc chat                        # v0.2 REPL; --continue bails until v0.2b
 apc model list                  # target (v0.4)
 apc model download open-jev     # ~350 MB, resumable + SHA-256 verified
 apc model status

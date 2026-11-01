@@ -37,7 +37,7 @@ for the README's version of a §8 decision, say why it was changed instead of si
 | `architecture.md` | Crate layout, dependency direction, the five traits |
 | `commands.md` | Cargo commands, release profile, tooling, docs lookup |
 | `gotchas.md` | Things that bite: edition/MSRV, async traits, spec-vs-README traps |
-| `research.md` | Docs verified via Context7 (Cargo workspaces, async-trait, genai) |
+| `research.md` | Docs verified via Context7 (Cargo workspaces, async-trait, reqwest, sentry) |
 | `workflows.md` | P0/P1 priorities, roadmap order, task tracking (kaneo) |
 
 ## Hard rules

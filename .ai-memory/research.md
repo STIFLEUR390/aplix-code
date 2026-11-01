@@ -25,7 +25,11 @@ relying on an unverified entry.
 - Cost: each async method is boxed into a `Pin<Box<dyn Future>>`. Fine for the agent loop; remember
   it if a hot path ever lives behind a trait object.
 
-## Verified — genai (`/websites/rs_genai`, latest 0.5.2)
+## Superseded — genai (`/websites/rs_genai`, latest 0.5.2)
+
+Status: **not a dependency** (SPEC §8.10 — not in this machine's cache, and the HTTP surface needed is
+`/chat/completions` + `/messages`). Kept only in case a future version reinstates it; do not read
+these notes as describing current code.
 
 - Client construction: `Client::builder()` → `ClientBuilder` with `with_reqwest`,
   `with_config(ClientConfig)`, `with_chat_options(ChatOptions)`, `with_auth_resolver`,
@@ -66,6 +70,8 @@ relying on an unverified entry.
 - **`reqwest`** (`/seanmonstar/reqwest`): `Response::bytes_stream()` (feature `stream`) →
   `impl Stream<Item = Result<Bytes>>`; `Response::chunk()` → next frame; `bytes()` collects.
   Resume is a `Range: bytes=<n>-` request header on the existing `.part` length — nothing special.
+  Feature naming in 0.13: `json` = serde support, `stream` = `bytes_stream()`, `rustls` =
+  `__rustls-aws-lc-rs` + `rustls-platform-verifier`; `default` pulls `default-tls` + `http2`.
 - **`directories`** (`/websites/rs_directories`): `ProjectDirs::data_dir()` → Linux
   `$XDG_DATA_HOME` or `~/.local/share`, macOS `~/Library/Application Support`, Windows
   `{FOLDERID_RoamingAppData}\<project>\data`. Exactly the session path in SPEC §2.5.
@@ -86,7 +92,8 @@ relying on an unverified entry.
 
 ## Open questions
 
-- Does `genai` expose per-token usage/cost per response? Needed if `apc config` ever reports spend.
+- The adapters ignore the `usage` object that OpenAI/Anthropic send in the final SSE chunk; per-token
+  cost reporting would need it parsed. Not needed until `apc config` reports spend.
 - `open-jev` licence and redistribution rules — affects whether `apc model download` can host the
   artifact or must point at the upstream URL.
 - Context compaction strategy: summarize with the same provider (costs a call) vs a local heuristic

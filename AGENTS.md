@@ -2,10 +2,11 @@
 
 ## State of the repo (check before assuming anything)
 
-v0.1 exists: a Cargo workspace (`crates/*`, 9 crates). Only two have real code — `apc-core`
-(config schema + layered resolution) and `apc-cli` (`apc init`, `apc config`, `--version`). The other
-seven are placeholders holding a doc comment. `apc run`/`chat`/`model` do **not** exist yet (v0.2+),
-there is no CI, and `skills/` is still missing. Read the tree before assuming a module exists.
+v0.2 exists: a Cargo workspace (`crates/*`, 9 crates). Four have real code — `apc-core` (config schema,
+layered resolution, provider-neutral chat types), `apc-traits` (`ModelAdapter`), `apc-models` (HTTP
+adapters, SSE streaming) and `apc-cli` (`init`, `config`, `run`, `chat`, `--version`). The remaining
+five are placeholders holding a doc comment. `apc model` does **not** exist yet (v0.4), there is no
+CI, and `skills/` is still missing. Read the tree before assuming a module exists.
 
 ## Sources of truth
 
@@ -36,7 +37,7 @@ apc-traits    every trait (Model, Tool, MemoryStore, Decision, Plugin) — the p
 apc-agent     agent loop, orchestration only, no I/O
 apc-tools     built-in tools: read_file, write_file, list_dir, run_shell
 apc-decision  Permission Guard: heuristic first, then open-jev (feature-gated)
-apc-models    LLM adapters via the `genai` crate
+apc-models    LLM adapters over direct HTTP + SSE (SPEC §8.10, no `genai`)
 apc-memory    JSONL session store (+ future backends)
 apc-plugins   static plugin registry (dynamic loading is v1.2)
 apc-cli       the `apc` binary — composition root
@@ -45,7 +46,27 @@ apc-cli       the `apc` binary — composition root
 Swappable behaviour goes behind a trait in `apc-traits`; never add a provider/backend-specific
 dependency to `apc-agent` or `apc-cli`.
 
-## Config — the only shipped feature
+## Providers and streaming (v0.2)
+
+- Two dialects only: OpenAI-compatible `POST {base_url}/chat/completions` and Anthropic
+  `POST {base_url}/messages`. Adding a provider is one arm in `defaults()` in
+  `crates/apc-models/src/lib.rs`; a provider that speaks a third protocol needs its own `Dialect`.
+- **`base_url` is the directory that holds the version prefix** (`http://127.0.0.1:31415/v1`), because
+  the adapter appends `/chat/completions`. Drop the `/v1` and you get the gateway's HTML page back.
+- Typing in `apc-models` means the CLI's `ChatStream` errors arrive as items; the HTTP status and a
+  non-`text/event-stream` body are errors *before* streaming starts. Don't "simplify" that check —
+  without it a wrong base URL streams nothing and exits 0.
+- Keys: `APC_API_KEY` first, then the provider's own variable (`OPENAI_API_KEY`, …). Ollama needs
+  none. Keys are read at `build()` time and never written to config — `APC_API_KEY` is deliberately
+  missing from `ENV_KEYS`.
+- Anthropic needs `max_tokens` (constant) and its system prompt hoisted to a top-level field; the
+  OpenAI dialect keeps `system` as a message. That split lives in `body()`.
+- `apc chat --continue` bails on purpose until `apc-memory` lands (v0.2b): the message history is
+  in-memory only.
+- Debug builds read `./.env` through `load_dotenv` in `crates/apc-cli/src/main.rs`; release builds do
+  not. The file is git-ignored and holds the local gateway URL, its key and the local Sentry DSN.
+
+## Config — the shipped feature
 
 - `apc-core::config` owns the schema and the precedence order; `apc-cli` only wires paths, env vars
   and flags into `Layer`s. Don't reimplement precedence in the CLI.
@@ -55,8 +76,8 @@ dependency to `apc-agent` or `apc-cli`.
   everything after `[provider]` inside it.
 - `deny_unknown_fields` is deliberate: a typo in `apc.toml` must fail loudly, not be ignored.
 - Layers: defaults < user (`~/.config/aplix/apc.toml`, via `directories`) < `./apc.toml` <
-  `./apc.local.toml` < `APC_PROVIDER` / `APC_MODEL` / `APC_PERMISSION_THRESHOLD` / `APC_TELEMETRY` <
-  flags. `apc config` prints the winning layer per key.
+  `./apc.local.toml` < `APC_PROVIDER` / `APC_MODEL` / `APC_BASE_URL` / `APC_PERMISSION_THRESHOLD` /
+  `APC_TELEMETRY` < flags. `apc config` prints the winning layer per key.
 
 ## Constraints that come from the product promise (do not silently break)
 
@@ -66,7 +87,8 @@ dependency to `apc-agent` or `apc-cli`.
   (that is why `local-jev` is a feature flag, SPEC §8.1).
 - **Every `run_shell` goes through the Permission Guard**; `P(destructive) > 0.8` ⇒ explicit user
   confirmation. Configurable threshold. No bypass path in `apc-agent` or `apc-tools`.
-- **Streaming is in the trait** (`chat → Stream<Response>`), not bolted on later (SPEC §8.3).
+- **Streaming is in the trait** (`chat → ChatStream`, i.e. `Stream<Item = Result<ChatEvent>>`), not
+  bolted on later (SPEC §8.3, §8.10).
 - **V1 `apc chat` is a plain stdin/stdout REPL** — no `ratatui`, no panes (SPEC §8.6).
 - **No dynamic plugin loading in V1**: `apc-plugins` is a static registry; `Plugin`/`MemoryStore`
   traits exist for V1.2 (SPEC §8.7, §9).
@@ -75,7 +97,7 @@ dependency to `apc-agent` or `apc-cli`.
   never file/prompt content, initialised in `apc-cli` alone.
   - **Dev phase (now)**: `telemetry` is a *default* feature in `crates/apc-cli/Cargo.toml` and the
     git-ignored `.env` sets `APC_TELEMETRY=1` + a local DSN (`localhost:8789`). Debug builds load
-    `.env` via `dotenvy`; release builds never do.
+    `.env` via its own `load_dotenv`; release builds never do.
   - The v1.0 release task (`ykajrzj02vow3xnfvd9s1rv1`) flips `default = []`, swaps in the production
     DSN and re-checks the size budget. Don't "clean up" the dev defaults before that task.
   - `panic = "abort"` means panic events only reach Sentry in debug builds.
@@ -96,23 +118,25 @@ cargo build --offline                    # this machine cannot reach crates.io a
 ./target/release/apc --version
 cargo test --workspace
 cargo test -p apc-core config            # single crate / single test (substring match)
-cargo test -p apc-cli --test cli         # CLI end-to-end
+cargo test -p apc-cli --test cli         # CLI end-to-end, incl. a local SSE stub server
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 cargo build --no-default-features        # compiles the Sentry feature out
 ```
 
-The CLI tests spawn `CARGO_BIN_EXE_apc` with a throwaway `HOME`/`XDG_CONFIG_HOME`, so they never read
-your real `~/.config/aplix/apc.toml`. Keep them that way: a test that depends on the developer's
-config is flaky.
+The CLI tests spawn `CARGO_BIN_EXE_apc` with a throwaway `HOME`/`XDG_CONFIG_HOME` and clear the
+`APC_*` variables, so they never read your real `~/.config/aplix/apc.toml` or your `.env` (the child's
+working directory is a temp sandbox, so `./.env` is absent). Keep them that way: a test that depends
+on the developer's config is flaky. Network calls are faked with a one-shot `TcpListener` serving a
+canned SSE body — never call a real provider from a test.
 
 If CI is added, it becomes the source of truth for this list.
 
 ## Roadmap order (SPEC §7 — do not jump ahead of it)
 
-v0.1 skeleton + `apc init`/`apc config`/config resolution (**done**) → v0.2 `run`/`chat` via `genai`
-with streaming → v0.3 Permission Guard (heuristic, then `open-jev`) → v0.4 `apc model` + downloads →
-v1.0 MVP. TUI (`ratatui`, v1.1), intent classification, `skills/`, SearXNG/Obscura (v1.2),
+v0.1 skeleton + `apc init`/`apc config`/config resolution (**done**) → v0.2 `run`/`chat` with
+streaming over direct HTTP adapters (**done**) → v0.2b session memory JSONL → v0.3 Permission Guard
+(heuristic, then `open-jev`) → v0.4 `apc model` + downloads → v0.5 telemetry off/on → v1.0 MVP. TUI (`ratatui`, v1.1), intent classification, `skills/`, SearXNG/Obscura (v1.2),
 long-term memory (v1.3), `apc serve` + Tauri (v2.0), sandboxing/WASM (v2.1) are all **post-MVP** —
 don't scaffold them for an MVP task.
 

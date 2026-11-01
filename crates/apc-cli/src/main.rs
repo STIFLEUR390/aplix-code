@@ -1,13 +1,16 @@
 #![forbid(unsafe_code)]
 //! The `apc` binary: composition root for every layer.
 
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use directories::ProjectDirs;
+use futures_util::StreamExt;
 
+use apc_core::chat::{ChatEvent, ChatStream, Message};
 use apc_core::config::{self, Layer, Loaded, Source};
 
 mod telemetry;
@@ -19,9 +22,12 @@ const VERSION: &str = concat!(
 );
 
 /// `APC_*` variables that override configuration (the env layer).
+/// `APC_API_KEY` is deliberately absent: keys are read by `apc-models`, never stored in the
+/// configuration (SPEC.md §3.2).
 const ENV_KEYS: &[(&str, &str)] = &[
     ("APC_PROVIDER", "provider.name"),
     ("APC_MODEL", "provider.model"),
+    ("APC_BASE_URL", "provider.base_url"),
     ("APC_PERMISSION_THRESHOLD", "decision.threshold"),
     ("APC_TELEMETRY", "telemetry"),
 ];
@@ -44,7 +50,11 @@ enum Command {
     /// Create a commented apc.toml in the current directory.
     Init(InitArgs),
     /// Show the effective configuration and the layer behind each value.
-    Config(ConfigArgs),
+    Config(Overrides),
+    /// Send one prompt and stream the answer.
+    Run(RunArgs),
+    /// Interactive session; one message per line.
+    Chat(ChatArgs),
 }
 
 #[derive(Args)]
@@ -54,27 +64,47 @@ struct InitArgs {
     force: bool,
 }
 
+/// Configuration overrides shared by every command (the flag layer).
 #[derive(Args)]
-struct ConfigArgs {
-    /// Override the provider (flag layer).
+struct Overrides {
+    /// Override the provider.
     #[arg(long)]
     provider: Option<String>,
-    /// Override the model (flag layer).
+    /// Override the model.
     #[arg(long)]
     model: Option<String>,
-    /// Override the destructive-command threshold (flag layer).
+    /// Override the destructive-command threshold.
     #[arg(long, value_name = "P")]
     permission_threshold: Option<f64>,
 }
 
-fn main() -> ExitCode {
+#[derive(Args)]
+struct RunArgs {
+    /// Prompt sent as the first user message.
+    #[arg(required = true, num_args = 1.., value_name = "PROMPT")]
+    prompt: Vec<String>,
+    #[command(flatten)]
+    overrides: Overrides,
+}
+
+#[derive(Args)]
+struct ChatArgs {
+    /// Resume the most recent session.
+    #[arg(long)]
+    r#continue: bool,
+    #[command(flatten)]
+    overrides: Overrides,
+}
+
+#[tokio::main]
+async fn main() -> ExitCode {
     #[cfg(debug_assertions)]
     load_dotenv(); // dev only: a release build never reads a stray .env
 
     let cli = Cli::parse();
     let _sentry = telemetry::init(telemetry_enabled(&cli));
 
-    match run(cli) {
+    match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             telemetry::capture(&error);
@@ -106,22 +136,86 @@ fn load_dotenv() {
     }
 }
 
-fn run(cli: Cli) -> Result<()> {
+async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Init(args) => init(&args),
         Command::Config(args) => show_config(&args),
+        Command::Run(args) => run_prompt(&args).await,
+        Command::Chat(args) => chat(&args).await,
+    }
+}
+
+fn overrides(command: &Command) -> Option<&Overrides> {
+    match command {
+        Command::Init(_) => None,
+        Command::Config(args) => Some(args),
+        Command::Run(args) => Some(&args.overrides),
+        Command::Chat(args) => Some(&args.overrides),
     }
 }
 
 /// Telemetry needs the config flag, and `apc init` is about to write that very config.
 fn telemetry_enabled(cli: &Cli) -> bool {
-    match &cli.command {
-        Command::Init(_) => telemetry::wants_from_env(),
-        Command::Config(args) => resolve(args).map_or_else(
+    match overrides(&cli.command) {
+        Some(args) => resolve(args).map_or_else(
             |_| telemetry::wants_from_env(),
             |(loaded, _)| loaded.config.telemetry,
         ),
+        None => telemetry::wants_from_env(),
     }
+}
+
+async fn run_prompt(args: &RunArgs) -> Result<()> {
+    let (loaded, _) = resolve(&args.overrides)?;
+    let adapter = apc_models::build(&loaded.config.provider)?;
+    let stream = adapter
+        .chat(&[Message::user(args.prompt.join(" "))])
+        .await?;
+    print_stream(stream).await
+}
+
+async fn chat(args: &ChatArgs) -> Result<()> {
+    if args.r#continue {
+        bail!("--continue needs session memory, which lands in v0.2b");
+    }
+    let (loaded, _) = resolve(&args.overrides)?;
+    let adapter = apc_models::build(&loaded.config.provider)?;
+
+    let mut messages: Vec<Message> = Vec::new();
+    loop {
+        print!("› ");
+        io::stdout().flush()?;
+        let mut line = String::new();
+        if io::stdin().read_line(&mut line)? == 0 {
+            break;
+        }
+        let text = line.trim();
+        if text.is_empty() {
+            continue;
+        }
+        if matches!(text, "exit" | "quit") {
+            break;
+        }
+        messages.push(Message::user(text));
+        print_stream(adapter.chat(&messages).await?).await?;
+    }
+    Ok(())
+}
+
+/// Print deltas as they arrive; one newline when the answer ends.
+async fn print_stream(mut stream: ChatStream) -> Result<()> {
+    let mut out = io::stdout();
+    while let Some(event) = stream.next().await {
+        match event? {
+            ChatEvent::Delta(text) => {
+                out.write_all(text.as_bytes())?;
+                out.flush()?;
+            }
+            ChatEvent::Done => {}
+        }
+    }
+    writeln!(out)?;
+    Ok(())
 }
 
 fn init(args: &InitArgs) -> Result<()> {
@@ -141,7 +235,7 @@ fn init(args: &InitArgs) -> Result<()> {
 type Checked = Vec<(Source, String, &'static str)>;
 
 /// Resolve the layers, plus the list of files consulted and whether each was loaded.
-fn resolve(args: &ConfigArgs) -> Result<(Loaded, Checked)> {
+fn resolve(args: &Overrides) -> Result<(Loaded, Checked)> {
     let cwd = current_dir()?;
     let user =
         ProjectDirs::from("dev", "aplix", "aplix").map(|dirs| dirs.config_dir().join("apc.toml"));
@@ -179,12 +273,21 @@ fn resolve(args: &ConfigArgs) -> Result<(Loaded, Checked)> {
     Ok((config::resolve(&layers)?, checked))
 }
 
-fn show_config(args: &ConfigArgs) -> Result<()> {
+fn show_config(args: &Overrides) -> Result<()> {
     let (loaded, checked) = resolve(args)?;
 
     let rows = [
         ("provider.name", loaded.config.provider.name.clone()),
         ("provider.model", loaded.config.provider.model.clone()),
+        (
+            "provider.base_url",
+            loaded
+                .config
+                .provider
+                .base_url
+                .clone()
+                .unwrap_or_else(|| "-".to_owned()),
+        ),
         (
             "decision.threshold",
             loaded.config.decision.threshold.to_string(),
@@ -256,7 +359,7 @@ fn env_value(key: &str, text: &str) -> toml::Value {
 }
 
 /// The flag layer, or `None` when no override was passed.
-fn flags(args: &ConfigArgs) -> Result<Option<Layer>> {
+fn flags(args: &Overrides) -> Result<Option<Layer>> {
     let mut pairs = Vec::new();
     if let Some(name) = &args.provider {
         pairs.push((

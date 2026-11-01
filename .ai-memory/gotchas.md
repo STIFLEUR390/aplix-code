@@ -2,9 +2,10 @@
 
 ## Repository reality vs docs
 
-- `README.md` (vision) and `SPEC.md` (MVP) describe the **target**. v0.1 code exists (workspace +
-  config + `apc init`/`config`); `apc run`/`chat`/`model`, all traits and the other seven crates do
-  not. Still absent: CI, `skills/`, `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/`.
+- `README.md` (vision) and `SPEC.md` (MVP) describe the **target**. v0.2 code exists (workspace,
+  config, `apc init`/`config`, `apc run`/`chat` streaming over HTTP adapters, Sentry telemetry);
+  `apc model`, tools, Permission Guard, session memory and five crates do not. Still absent: CI,
+  `skills/`, `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/`.
 - Coding tasks name a crate that may still be a placeholder — check its `src/lib.rs` before assuming
   a module exists.
 
@@ -22,6 +23,30 @@
   flag layers go through the same path, labelled `environment` / `command line`.
 - Empty `APC_*` values are ignored (treated as unset). `APC_TELEMETRY` accepts
   `1/0/true/false/yes/no/on/off`, not just TOML booleans.
+
+## Providers and streaming (v0.2)
+
+- `genai` is **not in this machine's cargo cache** and crates.io delivers ~4-7 KB/s, so it cannot be
+  added. Adapters are hand-written on `reqwest` (SPEC §8.10). Do not "restore" genai in a task
+  without checking `ls ~/.cargo/registry/src/*/ | grep genai` first.
+- `provider.base_url` is the **version directory**: the adapter appends `/chat/completions` (or
+  `/messages`). `http://127.0.0.1:31415` without `/v1` made the local relay return its own HTML page
+  — streaming nothing, exit code 0, until the content-type guard was added.
+- That guard is load-bearing: a `200` whose `content-type` is not `text/event-stream` becomes
+  `"{base_url}: expected an event stream, got `{ct}`: {first 200 chars}"`. Keep it.
+- The local relay at `127.0.0.1:31415` (`model = "auto"`) is a router in front of paid providers: it
+  answers `502 upstream` with `rate_limited ×1, timeout ×1` under load, and the first `apc chat`
+  attempt hung until the harness 120 s timeout. That is upstream, not a bug in `apc-models` — check
+  `curl -s -H "Authorization: Bearer $APC_API_KEY" http://127.0.0.1:31415/v1/models` before debugging
+  the client.
+- Keys resolve as `APC_API_KEY` first, then the provider's own variable; ollama needs none. They are
+  read in `build()` and never stored in config (`APC_API_KEY` is intentionally absent from `ENV_KEYS`).
+- Anthropic needs `max_tokens` (4096) and its system prompt at the top level; the OpenAI dialect keeps
+  `system` as a message. That asymmetry lives in `body()` — don't unify it.
+- `stream::unfold` state must be `Option<…>` for termination, and the closure needs `move` to capture
+  the dialect. Both were compile errors before they were learned.
+- CLI tests fake the network with a one-shot `TcpListener` + canned SSE body; never point a test at
+  the real relay.
 
 ## Telemetry / Sentry (v0.1 dev phase)
 

@@ -61,7 +61,7 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` sends 
 - **`apc model <cmd>`** — Manage local decision models (`list`, `download`, `status`, `verify`, `remove`).
 - **Built-in tools**: `read_file`, `write_file`, `list_dir`, `run_shell`.
 - **Local Permission Guard** — Before any shell command, a local model evaluates its destructiveness (`rm -rf`, `DROP TABLE`, `mkfs`…). Nothing dangerous runs without confirmation.
-- **Multi-provider support** via [`genai`](https://crates.io/crates/genai): OpenAI, Anthropic, Gemini, Ollama, DeepSeek, OpenRouter, Groq, and more.
+- **Multi-provider support** over the two dialects in use (`/chat/completions` compatible OpenAI, `/messages` Anthropic): OpenAI, Anthropic, Ollama, DeepSeek, OpenRouter, Groq, and any compatible local gateway.
 - **Resumable, verified model downloads** — Interrupted on a train? Just run `apc model download open-jev` again. Picks up where it left off, verifies the SHA-256, and never uses a corrupted file.
 - **Session persistence** — Resume a conversation with `apc chat --continue`.
 - **Cross-platform**: Linux, macOS, Windows.
@@ -112,7 +112,7 @@ aplix-code/
 │   ├── apc-agent/      # The agent loop. Orchestration only.
 │   ├── apc-tools/      # Built-in tools (fs, shell).
 │   ├── apc-decision/   # Local decision engine (open-jev) + heuristics fallback.
-│   ├── apc-models/     # LLM provider adapters (via genai).
+│   ├── apc-models/     # LLM provider adapters (direct HTTP, SSE streaming).
 │   ├── apc-memory/     # Session & long-term memory backends.
 │   ├── apc-plugins/    # Static plugin registry (dynamic loading lands in v1.2).
 │   └── apc-cli/        # The `apc` binary.
@@ -175,7 +175,7 @@ Requirements: Rust 1.80+, a modern OS. No system dependencies beyond OpenSSL (or
 | Version | Milestone |
 | :--- | :--- |
 | **v0.1** | Skeleton, workspace, `apc init` + config resolution |
-| **v0.2** | `apc run` + `apc chat` with OpenAI/Anthropic via `genai` |
+| **v0.2** | `apc run` + `apc chat` with streaming over direct HTTP adapters |
 | **v0.3** | Local Permission Guard: heuristic first, then `open-jev` |
 | **v0.4** | `apc model` subcommand + resumable downloads |
 | **v0.5** | Opt-in telemetry: local `tracing` logs + Sentry, off by default |
@@ -216,7 +216,7 @@ If you want to help but don't know where to start, look for issues tagged [`good
 - **[harness-rs](https://github.com/harness-rs/harness)** — for the most elegant "everything is a plugin" agent architecture in Rust.
 - **[OpenCode](https://github.com/sst/opencode)** — for the server-first, client-agnostic architecture we're adopting for `apc serve`.
 - **[local-jev](https://github.com/ronitgupta138/local-jev)** — for proving that fast, local decision models are not only possible, but practical.
-- **[genai](https://github.com/jeremychone/rust-genai)**, **[rig](https://github.com/0xPlaydust/rig)**, and the entire Rust AI ecosystem — for the building blocks we rely on every day.
+- **[rig](https://github.com/0xPlaydust/rig)** and the Rust AI ecosystem — for showing what agent loops and provider abstractions can look like.
 
 If we forgot someone, please open an issue — it's not intentional.
 

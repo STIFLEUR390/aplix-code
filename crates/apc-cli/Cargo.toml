@@ -19,8 +19,12 @@ telemetry = ["dep:sentry"]
 
 [dependencies]
 apc-core.workspace = true
+apc-models.workspace = true
+apc-traits.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 directories.workspace = true
+futures-util.workspace = true
 sentry = { workspace = true, optional = true }
+tokio.workspace = true
 toml.workspace = true

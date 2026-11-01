@@ -1,4 +1,4 @@
-//! End-to-end checks for `apc init` and `apc config` (no extra dev-dependencies).
+//! End-to-end checks for the shipped commands (no extra dev-dependencies).
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -24,6 +24,8 @@ fn apc_env(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
         .env("XDG_CONFIG_HOME", dir.join("xdg"))
         .env_remove("APC_PROVIDER")
         .env_remove("APC_MODEL")
+        .env_remove("APC_BASE_URL")
+        .env_remove("APC_API_KEY")
         .env_remove("APC_PERMISSION_THRESHOLD")
         .env_remove("APC_TELEMETRY");
     for (key, value) in env {
@@ -125,4 +127,112 @@ fn version_reports_the_decision_model() {
     let text = stdout(&output);
     assert!(text.contains("apc 0.1.0"), "{text}");
     assert!(text.contains("decision model"), "{text}");
+}
+
+/// Serve one canned SSE body on 127.0.0.1, so `apc run` exercises the real HTTP path offline.
+fn sse_server(body: &'static str) -> u16 {
+    server("text/event-stream", body)
+}
+
+/// Serve one canned body with an arbitrary content type.
+fn server(content_type: &'static str, body: &'static str) -> u16 {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind a port");
+    let port = listener.local_addr().expect("local address").port();
+    std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().expect("accept one request");
+        let mut request = Vec::new();
+        let mut chunk = [0u8; 1024];
+        loop {
+            let read = socket.read(&mut chunk).expect("read the request");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&chunk[..read]);
+            let text = String::from_utf8_lossy(&request).into_owned();
+            let Some(end) = text.find("\r\n\r\n") else {
+                continue;
+            };
+            let length = text[..end]
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())?
+                })
+                .unwrap_or(0);
+            if request.len() >= end + 4 + length {
+                break;
+            }
+        }
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: {content_type}\r\nconnection: close\r\n\r\n{body}"
+        );
+        socket.write_all(response.as_bytes()).expect("write body");
+    });
+    port
+}
+
+#[test]
+fn run_streams_from_an_openai_compatible_endpoint() {
+    let dir = sandbox("run");
+    let port = sse_server(concat!(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n",
+        "data: [DONE]\n\n",
+    ));
+    let base = format!("http://127.0.0.1:{port}/v1");
+
+    let output = apc_env(
+        &dir,
+        &["run", "say hello"],
+        &[
+            ("APC_PROVIDER", "openai"),
+            ("APC_MODEL", "auto"),
+            ("APC_BASE_URL", &base),
+            ("APC_API_KEY", "test-key"),
+        ],
+    );
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(stdout(&output), "hello\n");
+}
+
+#[test]
+fn run_without_a_key_names_the_variable() {
+    let dir = sandbox("no-key");
+    let output = apc_env(&dir, &["run", "hi"], &[("APC_PROVIDER", "openai")]);
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("OPENAI_API_KEY"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn run_reports_a_non_stream_response() {
+    let dir = sandbox("not-sse");
+    let port = server("text/html", "<html>gateway</html>");
+    let base = format!("http://127.0.0.1:{port}/v1");
+
+    let output = apc_env(
+        &dir,
+        &["run", "hi"],
+        &[
+            ("APC_PROVIDER", "openai"),
+            ("APC_BASE_URL", &base),
+            ("APC_API_KEY", "test-key"),
+        ],
+    );
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("expected an event stream"),
+        "{}",
+        stderr(&output)
+    );
 }

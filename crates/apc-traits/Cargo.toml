@@ -9,3 +9,5 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+apc-core.workspace = true
+async-trait.workspace = true
