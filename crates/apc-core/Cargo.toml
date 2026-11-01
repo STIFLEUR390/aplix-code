@@ -10,6 +10,7 @@ authors.workspace = true
 
 [dependencies]
 futures-core.workspace = true
+rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

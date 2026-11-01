@@ -93,6 +93,21 @@
 - Escape quits even mid-turn: the agent task keeps running until the runtime drops, so nothing is
   persisted for the cut turn.
 
+## TLS: ring, not aws-lc-rs (v1.0 release)
+
+- reqwest's `rustls` feature hard-codes `aws-lc-rs`; its C sources reference `__isoc23_sscanf` /
+  `__isoc23_strtol` and fail to link on the `ubuntu-22.04` runner:
+  `rust-lld: error: undefined symbol: __isoc23_strtol`. Hence `rustls-no-provider` + the `ring`
+  provider, which also drops the release binary from 5.91 MB to 3.87 MB.
+- With `rustls-no-provider`, building a `reqwest::Client` **before** installing a provider panics:
+  "No rustls crypto provider is configured". Every construction site calls
+  `apc_core::net::install_crypto_provider()` first (`apc-models::build`, `JevProvider::new`,
+  `Store::download`). A new client site must do the same.
+- The Linux artifact is built on `ubuntu-22.04`, not `ubuntu-latest`: a binary linked against
+  glibc 2.39 will not start on 2.35 ("version `GLIBC_2.38' not found").
+- Check TLS without a paid key: `APC_BASE_URL=https://api.openai.com/v1 APC_API_KEY=sk-invalid
+  apc run hi` must answer `"status": 401`; a provider panic means the install call is missing.
+
 ## Telemetry / Sentry (dev phase)
 
 - Two independent gates, both required: `telemetry = true` in the resolved config **and** a DSN in

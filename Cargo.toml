@@ -31,10 +31,18 @@ ratatui = "0.29"
 sha2 = "0.10"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+# rustls-no-provider, not rustls: the latter hard-codes aws-lc-rs, whose C sources
+# reference glibc 2.38 symbols and refuse to link on Ubuntu 22.04 (the release
+# runner). ring is the provider instead, installed once in apc-cli's main.
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
-  "rustls",
+  "rustls-no-provider",
   "stream",
+] }
+rustls = { version = "0.23", default-features = false, features = [
+  "ring",
+  "std",
+  "tls12",
 ] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

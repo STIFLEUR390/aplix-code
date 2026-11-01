@@ -137,6 +137,7 @@ name = "apc-core"
 version = "1.0.0"
 dependencies = [
  "futures-core",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

@@ -25,6 +25,7 @@ pub struct JevProvider {
 impl JevProvider {
     /// `base_url` is the server root, e.g. `http://127.0.0.1:8080`.
     pub fn new(base_url: impl Into<String>) -> Self {
+        apc_core::net::install_crypto_provider();
         Self {
             client: reqwest::Client::new(),
             base_url: base_url.into().trim_end_matches('/').to_owned(),

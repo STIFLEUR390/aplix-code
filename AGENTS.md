@@ -186,7 +186,12 @@ still exists in `main::repl` and must keep working.
   `opt-level = 3` — size comes from stripping, not from `opt-level = "z"` (SPEC §8.5).
 - Config precedence: defaults < user < project < local < env < flags. Config file `apc.toml`; API
   keys from env only.
-- Rust 1.80+ minimum; OpenSSL or `rustls` (feature) is the only system dependency expected.
+- Rust 1.80+ minimum, no system dependency: TLS is `rustls` with the **ring** provider.
+  reqwest is built with `rustls-no-provider` because its default `aws-lc-rs` C sources reference
+  glibc 2.38 symbols and refuse to link on Ubuntu 22.04 (the release runner). Every crate that
+  builds a `reqwest::Client` calls `apc_core::net::install_crypto_provider()` first — a client
+  created without it panics with "No rustls crypto provider is configured". The Linux release
+  artifact is built on `ubuntu-22.04` so it runs on glibc 2.35 (Ubuntu 22.04, Debian 12).
 
 ## Commands
 

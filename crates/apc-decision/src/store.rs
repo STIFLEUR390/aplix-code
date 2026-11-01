@@ -123,6 +123,7 @@ impl Store {
             .open(&partial)
             .map_err(|error| io_error(&partial, error))?;
 
+        apc_core::net::install_crypto_provider();
         let mut request = reqwest::Client::new().get(entry.url);
         if written > 0 {
             request = request.header(reqwest::header::RANGE, format!("bytes={written}-"));

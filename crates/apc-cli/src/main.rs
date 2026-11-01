@@ -137,7 +137,6 @@ enum ModelCommand {
 async fn main() -> ExitCode {
     #[cfg(debug_assertions)]
     load_dotenv(); // dev only: a release build never reads a stray .env
-
     let cli = Cli::parse();
     // Held until the end of main so a queued event flushes on drop; a `()` guard without the
     // `telemetry` feature is the point of the binding, hence the allow.

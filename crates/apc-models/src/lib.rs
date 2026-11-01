@@ -64,6 +64,7 @@ pub fn build(provider: &Provider) -> Result<Box<dyn ModelAdapter>> {
         .filter(|url| !url.trim().is_empty())
         .unwrap_or_else(|| default_base.to_owned());
 
+    apc_core::net::install_crypto_provider();
     Ok(Box::new(Http {
         client: reqwest::Client::new(),
         base_url,
