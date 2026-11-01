@@ -2,12 +2,12 @@
 
 ## State of the repo (check before assuming anything)
 
-v0.3b exists: a Cargo workspace (`crates/*`, 9 crates) and all nine now hold code — `apc-core`
+v0.4 exists: a Cargo workspace (`crates/*`, 9 crates) and all nine hold code — `apc-core`
 (config + chat types), `apc-traits` (every trait), `apc-models` (HTTP adapters, SSE), `apc-memory`
-(JSONL sessions), `apc-decision` (heuristic guard), `apc-tools` (file tools + guarded shell),
-`apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli` (`init`, `config`, `run`,
-`chat`, `--version`). `apc model`, hooks and `skills/` do **not** exist yet (v0.4+), and there is no
-CI. Read the tree before assuming a module exists.
+(JSONL sessions), `apc-decision` (heuristic guard + model store), `apc-tools` (file tools + guarded
+shell), `apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli` (`init`, `config`,
+`run`, `chat`, `model`, `--version`). Hooks and `skills/` do **not** exist yet, and there is no CI.
+Read the tree before assuming a module exists.
 
 ## Sources of truth
 
@@ -162,7 +162,7 @@ cargo test --workspace
 cargo test -p apc-core config            # single crate / single test (substring match)
 cargo test -p apc-cli --test cli         # CLI end-to-end, incl. a local SSE stub server
 cargo test -p apc-memory                 # session append/load, torn tail
-cargo test -p apc-decision               # guard patterns: true positives and benign commands
+cargo test -p apc-decision               # guard patterns + the resumable model download
 cargo test -p apc-tools                  # path confinement + a refused confirmation runs nothing
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
@@ -196,15 +196,35 @@ If CI is added, it becomes the source of truth for this list.
 - `Cascade` is fail-open by design: any transport, status or JSON error falls back to
   `HeuristicProvider` silently. That is what keeps SPEC §2.3 true — a dead sidecar must not block
   `apc`. Tests cover both directions (working backend wins, broken one falls back).
-- Verify with `cargo test --offline -p apc-decision --features open-jev`, and remember the default
-  build never includes `reqwest` here.
+- Verify with `cargo test --offline -p apc-decision --features open-jev`. `reqwest` is unconditional
+  now (the model store uses it); only `serde_json` and `jev.rs` sit behind the feature.
+
+## Model store (v0.4)
+
+`crates/apc-decision/src/store.rs` holds the catalog, the downloader and the verifier. **`CATALOG`
+is empty on purpose**: `local-jev` publishes no weights (SPEC §8.11), so there is nothing to fetch
+and the heuristics remain the only working guard. Do not invent a URL or a SHA-256 to make
+`apc model download` succeed — `apc model list` saying "nothing is published" is the honest state
+(SPEC §8.12).
+
+Rules if you touch it:
+- A model is `<data dir>/models/<id>.bin`; a download is `<id>.bin.part` and only `rename`s after
+  the byte count matches `entry.bytes` **and** the SHA-256 matches. Never install an unverified file.
+- A server that answers `200` to a `Range` request gets its file truncated and restarted, not
+  appended to.
+- A checksum mismatch deletes the `.part`: a corrupt partial cannot resume into a good file.
+- `reqwest` and `sha2` are unconditional dependencies of `apc-decision`; only `open-jev`'s
+  `serde_json` is feature-gated.
+- Tests use a one-shot `TcpListener` that honours `Range` (and one that ignores it). No real
+  network in a test, ever.
 
 ## Roadmap order (SPEC §7 — do not jump ahead of it)
 
 v0.1 skeleton + `apc init`/`apc config`/config resolution (**done**) → v0.2 `run`/`chat` with
 streaming over direct HTTP adapters (**done**) → v0.2b session memory JSONL (**done**) → v0.3 agent
 loop, tools and the heuristic Permission Guard (**done**) → v0.3b `open-jev` sidecar behind the
-feature flag (**done**) → v0.4 `apc model` + downloads → v0.5 telemetry off/on → v1.0 MVP. TUI (`ratatui`, v1.1), intent classification, `skills/`, SearXNG/Obscura (v1.2),
+feature flag (**done**) → v0.4 `apc model` + resumable downloads (**done**, empty catalog) → v0.5
+telemetry off/on → v1.0 MVP. TUI (`ratatui`, v1.1), intent classification, `skills/`, SearXNG/Obscura (v1.2),
 long-term memory (v1.3), `apc serve` + Tauri (v2.0), sandboxing/WASM (v2.1) are all **post-MVP** —
 don't scaffold them for an MVP task.
 

@@ -17,7 +17,7 @@
 | v0.2b | Session memory JSONL + `apc chat --continue` — **done** |
 | v0.3 | Agent loop + built-in tools + heuristic Permission Guard — **done** |
 | v0.3b | `open-jev` client for a local-jev sidecar behind a feature flag, `Cascade` fallback — **done** |
-| v0.4 | `apc model` + resumable downloads |
+| v0.4 | `apc model` + resumable downloads — **done** (empty catalog, SPEC §8.12) |
 | v0.5 | Opt-in telemetry: `tracing` logs + Sentry, off by default |
 | v1.0 | MVP: stable CLI, docs, CI, releases Linux/macOS/Windows |
 | v1.1 | `ratatui` TUI, intent classification, `skills/` |
@@ -33,7 +33,7 @@ the change so it doesn't depend on what does not exist yet.
 
 - **Permission Guard before the shell tool is reachable.** `run_shell` must be *callable only*
   through the guard. The heuristic ranks above the neural model: it is what makes v0.3 shippable
-  before v0.4 exists.
+  with no model on disk.
 - **Own types before adapters.** `apc-core` types → `apc-traits` → `apc-models` adapter → `apc-agent`
   loop. Never let a `genai` type leak past `apc-models`.
 - **P0 before P1.** `apc config` (P1) never blocks `apc run`/`chat`/`init`/`model` (P0); intent

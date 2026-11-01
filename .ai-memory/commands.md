@@ -1,6 +1,6 @@
 # Commands
 
-v0.3b is implemented; commands marked *target* do not exist yet.
+v0.4 is implemented; commands marked *target* do not exist yet.
 
 ## Build / run
 
@@ -20,7 +20,8 @@ cargo build --offline --features open-jev        # add the local-jev decision cl
 APC_DECISION_ENDPOINT=http://127.0.0.1:8080 ./target/debug/apc run "…"
 ```
 
-*Target (v0.4+):* `apc model <cmd>`.
+`apc model list|status|verify|remove <id>` work today; `download` reports an unknown model because
+the catalog is empty (SPEC §8.12).
 
 Requires Rust 1.80+. Only system dependency expected: OpenSSL, or `rustls` if the feature is enabled.
 
@@ -99,15 +100,15 @@ apc init                        # writes a commented apc.toml
 apc config                      # effective config + which layer set each key (P1)
 apc run "<prompt>"              # v0.2, streams
 apc chat [--continue]           # v0.2 REPL, sessions persisted (v0.2b)
-apc model list                  # target (v0.4)
-apc model download open-jev     # ~350 MB, resumable + SHA-256 verified
-apc model status
-apc model verify
-apc model remove open-jev
+apc model list                  # works; says nothing is published (empty catalog)
+apc model download <id>         # resumes a .part, verifies SHA-256, then renames
+apc model status <id>
+apc model verify <id>
+apc model remove <id>
 ```
 
-Model cache and sessions live under `${XDG_DATA_HOME:-~/.local/share}/aplix/`
-(sessions in `sessions/<id>.jsonl`, one file per conversation).
+Models and sessions live under `${XDG_DATA_HOME:-~/.local/share}/aplix/`
+(`models/<id>.bin` with `<id>.bin.part` while downloading, `sessions/<id>.jsonl` per conversation).
 
 ## Telemetry (Sentry)
 

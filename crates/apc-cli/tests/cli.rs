@@ -318,3 +318,27 @@ fn chat_persists_a_session_and_continues_it() {
     let text = std::fs::read_to_string(session_file(&dir)).expect("read session");
     assert_eq!(text.lines().count(), 4, "{text}");
 }
+
+#[test]
+fn model_list_says_nothing_is_published_yet() {
+    let dir = sandbox("model-list");
+    let out = apc(&dir, &["model", "list"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        stdout(&out).contains("no decision model is published yet"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn model_download_names_the_unknown_id() {
+    let dir = sandbox("model-download");
+    let out = apc(&dir, &["model", "download", "open-jev"]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("unknown model `open-jev`"),
+        "{}",
+        stderr(&out)
+    );
+}

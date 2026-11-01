@@ -406,6 +406,24 @@ Conséquences assumées :
 - Conséquence ouverte : le modèle ne donne pas encore la qualité « DeBERTa q4f16 » promise par le
   README ; ce sera vrai quand un backend d'inférence embarqué sera réellement mesurable.
 
+### 8.12 `apc model` existe, le catalogue est vide
+
+La v0.4 livre tout le chemin de téléchargement (`.part`, reprise par `Range`, SHA-256, renommage
+atomique, `status`, `verify`, `remove`) mais **aucune entrée de catalogue**. Motif : `local-jev`
+v2.0.0 ne publie aucune pondération et n'embarque aucun moteur d'inférence (§8.11), donc il n'existe
+pas d'artefact à télécharger. Inventer une URL et une empreinte aurait rendu `apc model download`
+mensonger.
+
+Conséquences :
+
+- `apc model list` affiche que rien n'est publié ; `apc model download <id>` échoue avec
+  `unknown model`, sauf après ajout d'une entrée dans `CATALOG`
+  (`crates/apc-decision/src/store.rs`).
+- Le moteur est testé de bout en bout contre un serveur local : reprise, serveur qui ignore `Range`,
+  somme invalide jamais installée, vérification d'un fichier altéré, suppression.
+- Le jour où un artefact réel apparaît, l'ajout est une entrée de quatre champs ; rien d'autre à
+  changer.
+
 ---
 
 ## 9. Hors périmètre V1 (explicite)

@@ -57,6 +57,8 @@ enum Command {
     Run(RunArgs),
     /// Interactive session; one message per line.
     Chat(ChatArgs),
+    /// Manage the local decision models.
+    Model(ModelArgs),
 }
 
 #[derive(Args)]
@@ -98,12 +100,47 @@ struct ChatArgs {
     overrides: Overrides,
 }
 
+#[derive(Args)]
+struct ModelArgs {
+    #[command(subcommand)]
+    command: ModelCommand,
+}
+
+#[derive(Subcommand)]
+enum ModelCommand {
+    /// List the published models and what is on disk.
+    List,
+    /// Download a model, resuming an interrupted one.
+    Download {
+        /// Model id (`apc model list`).
+        id: String,
+    },
+    /// Show whether a model is installed.
+    Status {
+        /// Model id.
+        id: String,
+    },
+    /// Re-check an installed model's checksum.
+    Verify {
+        /// Model id.
+        id: String,
+    },
+    /// Delete a model and any partial download.
+    Remove {
+        /// Model id.
+        id: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     #[cfg(debug_assertions)]
     load_dotenv(); // dev only: a release build never reads a stray .env
 
     let cli = Cli::parse();
+    // Held until the end of main so a queued event flushes on drop; a `()` guard without the
+    // `telemetry` feature is the point of the binding, hence the allow.
+    #[allow(clippy::let_unit_value)]
     let _sentry = telemetry::init(telemetry_enabled(&cli));
 
     match run(cli).await {
@@ -144,6 +181,7 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Config(args) => show_config(&args),
         Command::Run(args) => run_prompt(&args).await,
         Command::Chat(args) => chat(&args).await,
+        Command::Model(args) => model(&args).await,
     }
 }
 
@@ -153,6 +191,7 @@ fn overrides(command: &Command) -> Option<&Overrides> {
         Command::Config(args) => Some(args),
         Command::Run(args) => Some(&args.overrides),
         Command::Chat(args) => Some(&args.overrides),
+        Command::Model(_) => None,
     }
 }
 
@@ -280,6 +319,86 @@ impl Approver for StdinApprover {
         })?;
         Ok(read > 0 && matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
     }
+}
+
+async fn model(args: &ModelArgs) -> Result<()> {
+    let store = apc_decision::Store::new()?;
+    match &args.command {
+        ModelCommand::List => {
+            if apc_decision::CATALOG.is_empty() {
+                println!(
+                    "no decision model is published yet: the heuristic guard needs none (SPEC.md §8.11)"
+                );
+                return Ok(());
+            }
+            for entry in apc_decision::CATALOG {
+                let state = match store.status(entry.id)? {
+                    apc_decision::Status::Installed => "installed".to_owned(),
+                    apc_decision::Status::Partial(bytes) => format!("partial ({bytes} bytes)"),
+                    apc_decision::Status::Missing => "missing".to_owned(),
+                };
+                println!(
+                    "{:<16} {:>7} MB  {state}",
+                    entry.id,
+                    entry.bytes / 1_000_000
+                );
+            }
+        }
+        ModelCommand::Download { id } => {
+            let entry = apc_decision::find(id)?;
+            match store.status(id)? {
+                apc_decision::Status::Installed => {
+                    println!(
+                        "{id} is already installed at {}",
+                        store.installed(id).display()
+                    );
+                    return Ok(());
+                }
+                apc_decision::Status::Partial(bytes) => {
+                    eprintln!("resuming {id} at {bytes} bytes");
+                }
+                apc_decision::Status::Missing => {}
+            }
+            let mut shown = 0u64;
+            let path = store
+                .download(entry, |written| {
+                    let percent = written * 100 / entry.bytes.max(1);
+                    if percent >= shown + 5 || written == entry.bytes {
+                        shown = percent;
+                        eprint!("\r{id}: {percent}%");
+                    }
+                })
+                .await?;
+            eprintln!();
+            println!("installed {} at {}", entry.id, path.display());
+        }
+        ModelCommand::Status { id } => {
+            apc_decision::find(id)?;
+            match store.status(id)? {
+                apc_decision::Status::Installed => {
+                    println!("{id}: installed at {}", store.installed(id).display());
+                }
+                apc_decision::Status::Partial(bytes) => println!("{id}: partial, {bytes} bytes"),
+                apc_decision::Status::Missing => println!("{id}: missing"),
+            }
+        }
+        ModelCommand::Verify { id } => {
+            let entry = apc_decision::find(id)?;
+            if store.verify(entry)? {
+                println!("{id}: checksum matches");
+            } else {
+                bail!("{id}: checksum mismatch, remove it and download again");
+            }
+        }
+        ModelCommand::Remove { id } => {
+            if store.remove(id)? {
+                println!("removed {id}");
+            } else {
+                println!("{id} was not present");
+            }
+        }
+    }
+    Ok(())
 }
 
 fn init(args: &InitArgs) -> Result<()> {

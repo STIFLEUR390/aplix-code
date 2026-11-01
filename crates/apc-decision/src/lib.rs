@@ -9,10 +9,12 @@
 mod cascade;
 #[cfg(feature = "open-jev")]
 mod jev;
+pub mod store;
 
 pub use cascade::Cascade;
 #[cfg(feature = "open-jev")]
 pub use jev::JevProvider;
+pub use store::{find, ModelEntry, Status, Store, CATALOG};
 
 use apc_core::Result;
 use apc_traits::DecisionProvider;

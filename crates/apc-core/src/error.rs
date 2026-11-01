@@ -30,6 +30,10 @@ pub enum Error {
     #[error("{0}")]
     Decision(String),
 
+    /// The model store could not satisfy a request (unknown id, bad checksum, short download).
+    #[error("{0}")]
+    Model(String),
+
     /// The platform exposes no user data directory.
     #[error("cannot locate the user data directory for this platform")]
     NoDataDir,

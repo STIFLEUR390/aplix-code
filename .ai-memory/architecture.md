@@ -117,9 +117,24 @@ Still to come: hooks (`PreToolUse`, `PostToolUse`, `Stop`) and context compactio
 | `apc run "<prompt>"` | P0 | **done** (agent + tools) |
 | `apc chat` (plain REPL; `--continue` resumes) | P0 | **done** |
 | `apc init` | P0 | **done** |
-| `apc model list\|download\|status\|verify\|remove` | P0 | v0.4 |
+| `apc model list\|download\|status\|verify\|remove` | P0 | **done** (v0.4; empty catalog) |
 | `apc --version` (also prints the loaded decision model) | P0 | **done** (`decision model: none (heuristic fallback)`) |
 | `apc config` (effective config + which layer set it) | P1 | **done** |
+
+## Model store (v0.4, shipped)
+
+`crates/apc-decision/src/store.rs`:
+
+- `ModelEntry { id, url, sha256, bytes }` and `CATALOG: &[ModelEntry]`, **empty**: `local-jev` ships
+  no weights (SPEC §8.11), so there is nothing to download; inventing a URL would make the command
+  lie (SPEC §8.12). `find(id)` returns `Error::Model("unknown model …")` otherwise.
+- `Store` rooted at `ProjectDirs::data_dir()/models`; `status()` = `Missing | Partial(bytes) |
+  Installed`; `download(entry, progress)` writes `<id>.bin.part` with a `Range: bytes=N-` resume,
+  truncates and restarts if the server answers `200`, refuses to rename unless the byte count and
+  the SHA-256 match, and deletes a corrupt `.part`; `verify()` re-hashes an installed file;
+  `remove()` deletes file + partial.
+- Cost: `reqwest` + `sha2` became unconditional dependencies of `apc-decision`; only `serde_json`
+  stays behind `open-jev`.
 
 ## Config (v0.1)
 

@@ -10,14 +10,17 @@ authors.workspace = true
 
 [features]
 # Talks to a local-jev sidecar instead of the built-in heuristics (SPEC.md §8.1, §8.11).
-open-jev = ["dep:reqwest", "dep:serde_json"]
+open-jev = ["dep:serde_json"]
 
 [dependencies]
 apc-core.workspace = true
 apc-traits.workspace = true
 async-trait.workspace = true
-reqwest = { workspace = true, optional = true }
+directories.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
 serde_json = { workspace = true, optional = true }
+sha2.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

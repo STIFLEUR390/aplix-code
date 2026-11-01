@@ -67,7 +67,7 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ### 📦 Still planned for `v1.0.0` (MVP)
 
-- **`apc model <cmd>`** — Manage local decision models (`list`, `download`, `status`, `verify`, `remove`), with resumable, SHA-256 verified downloads (v0.4).
+- **`apc model <cmd>`** — Manage local decision models (`list`, `download`, `status`, `verify`, `remove`), with resumable, SHA-256 verified downloads. The catalog is empty for now: no upstream artifact exists (`SPEC.md` §8.12).
 - **Telemetry off by default** in release builds (v0.5).
 - **Cross-platform releases**: Linux, macOS, Windows, plus CI.
 
@@ -104,9 +104,10 @@ apc config        # every value, and which layer supplied it
 apc run "Add a progress bar to the TUI in src/ui.rs"
 ```
 
-Once it is published, the install is `cargo install aplix-code`, and `apc model download open-jev`
-arrives with `v0.4` (`SPEC.md` §7). A local-jev sidecar can already refine the guard today: build
-with `--features open-jev` and set `decision.endpoint` (see `SPEC.md` §8.11).
+Once it is published, the install is `cargo install aplix-code`. `apc model` ships today but its
+catalog is empty — there is no decision-model artifact upstream yet (`SPEC.md` §8.12). A local-jev
+sidecar can still refine the guard: build with `--features open-jev` and set `decision.endpoint`
+(see `SPEC.md` §8.11).
 
 ---
 
@@ -194,7 +195,7 @@ While building offline is what this machine needs, `cargo build --offline` is th
 | **v0.2b** | Session memory in JSONL, `apc chat --continue` |
 | **v0.3** | Local Permission Guard: heuristics on every shell command |
 | **v0.3b** | `open-jev` backend behind a feature flag, fail-open to the heuristics |
-| **v0.4** | `apc model` subcommand + resumable downloads |
+| **v0.4** | `apc model` subcommand + resumable, verified downloads |
 | **v0.5** | Opt-in telemetry: local `tracing` logs + Sentry, off by default |
 | **v1.0** | MVP: stable CLI, docs, CI, releases for Linux/macOS/Windows |
 | **v1.1** | `ratatui`-based TUI, intent classification, `skills/` |

@@ -2,10 +2,10 @@
 
 ## Repository reality vs docs
 
-- `README.md` (vision) and `SPEC.md` (MVP) describe the **target**. v0.2b code exists (workspace,
-  config, `apc init`/`config`, `apc run`/`chat` streaming over HTTP adapters, JSONL sessions, Sentry
-  telemetry); `apc model`, tools, Permission Guard and four crates do not. Still absent: CI,
-  `skills/`, `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/`.
+- `README.md` (vision) and `SPEC.md` (MVP) describe the **target**. v0.4 code exists (workspace,
+  config, `apc init`/`config`, `apc run`/`chat`, JSONL sessions, tools + guard, `open-jev` client,
+  model store, Sentry telemetry). Still absent: CI, `skills/`, hooks, `CONTRIBUTING.md`,
+  `.github/ISSUE_TEMPLATE/`.
 - Coding tasks name a crate that may still be a placeholder — check its `src/lib.rs` before assuming
   a module exists.
 
@@ -62,6 +62,23 @@
   the file, and a retry via `--continue` continues from it.
 - Tests: `cargo test -p apc-memory`; the CLI test points `XDG_DATA_HOME` at its sandbox
   (`dir/data/aplix/sessions`), so runs never touch your real history.
+
+## Model store (v0.4)
+
+- **The catalog is empty and that is correct.** `local-jev` publishes no weights, so no artifact
+  exists to download (SPEC §8.11). `apc model download open-jev` answers `unknown model `open-jev``.
+  Do not "fix" it by adding a URL and a made-up SHA-256: the download would then fail verification
+  or install something unverified. A real artifact is one `ModelEntry` in `CATALOG`.
+- A `.part` that fails the checksum is **deleted**, not resumed: resuming a corrupt prefix can only
+  produce another corrupt file.
+- Dangerous assumption to re-check: a server that ignores `Range` and answers `200` must lead to a
+  truncate-and-restart, never an append (covered by `a_server_that_ignores_the_range_restarts_from_zero`).
+- `reqwest`/`sha2` are now unconditional in `apc-decision`, so `--no-default-features` no longer
+  drops `reqwest`; only `apc-cli`'s Sentry goes away.
+- **The resume path has never run against a real artifact.** It is proven by local stubs only
+  (16-byte bodies, stubs that honour or ignore `Range`); no ~350 MB download, and no real Ctrl-C,
+  has been exercised here — the network tops out at a few KB/s. Treat it as tested logic, not as a
+  field-proven download, and re-run it end to end the day a catalog entry exists.
 
 ## Telemetry / Sentry (v0.1 dev phase)
 
