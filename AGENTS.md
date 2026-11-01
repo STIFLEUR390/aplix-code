@@ -143,6 +143,10 @@ dependency to `apc-agent` or `apc-cli`.
     never do.
   - Verified at v1.0: the release binary has no sentry crate in its graph, no DSN string, and with
     `SENTRY_DSN` + `APC_TELEMETRY=1` forced in the environment it still opens no connection.
+  - The dev DSN in `.env` is Rustrak (`rustrak-api.applix.fr`, project 3 "Aplix code"). Delivery can
+    be checked without the UI through the `senntry-online` MCP: `list_projects` →
+    `list_issues({project_id: 3})` → `list_events`/`get_event`. A `warn!` becomes an *event* (level
+    `warning`), not just a breadcrumb, and its `error` field carries file paths.
   - `panic = "abort"` means panic events only reach Sentry in debug builds.
   - The `tracing` subscriber (fmt layer to stderr) is installed unconditionally, so
     `APC_LOG=debug|info|warn|error` gives local logs with no DSN and no network; default is `warn`.

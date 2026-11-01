@@ -134,10 +134,8 @@ Models and sessions live under `${XDG_DATA_HOME:-~/.local/share}/aplix/`
 cargo run -p apc-cli -- config                       # .env is auto-loaded in debug builds
 APC_TELEMETRY=1 APC_SENTRY_DSN=http://key@host/1 target/debug/apc config
 APC_TELEMETRY=0 target/debug/apc config              # force off, beats any DSN
-cargo build --no-default-features                    # compiles the `telemetry` feature out
-```
-
-APC_LOG=debug target/debug/apc run "…"                    # local logs, no DSN, no network
+cargo build --features telemetry                     # compiles the Sentry path in
+APC_LOG=debug target/debug/apc run "…"               # local logs, no DSN, no network
 ```
 
 Since v1.0 `default = []`: a normal build has **no Sentry code**. Work on it with
@@ -156,6 +154,21 @@ APC_TELEMETRY=1 APC_SENTRY_DSN=http://pub@127.0.0.1:8799/1 ./target/debug/apc co
 
 A `POST /api/1/envelope/` with an `event` payload means wiring works. No DSN ⇒ `ClientOptions::new()`
 keeps `dsn = None` ⇒ disabled client, zero network.
+
+The dev DSN in `.env` points at **Rustrak** (`rustrak-api.applix.fr`, project `3` "Aplix code") —
+readable back through the `senntry-online` MCP, so delivery can be checked without opening the UI:
+
+```
+get_server_version()                       # 0.23.0
+list_projects()                            # project id 3, stored_event_count tells you if it arrived
+list_issues({ project_id: 3 })             # short_id APLIX-CODE-n, title, level
+list_events({ project_id: 3, issue_id })   # event ids
+get_event({ project_id: 3, issue_id, event_id })
+```
+
+Verified 2026-11-01: a config error landed as `APLIX-CODE-1`, and `warn!(tool failed)` from
+`crates/apc-agent/src/lib.rs:73` landed as `APLIX-CODE-2` with `level=warning`, `logger=apc_agent`,
+fields `tool` and `error` under "Rust Tracing Fields" — the error string carries the file path.
 
 ## Docs lookup (this machine)
 
