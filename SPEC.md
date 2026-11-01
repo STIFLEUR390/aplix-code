@@ -276,7 +276,7 @@ opt-level = 3      # voir §8.5 : la vitesse primait sur la taille
 | v1.2 | Plugins de recherche web (SearXNG) et d'extraction (Obscura) |
 | v1.2b | Décider si `rig` remplace nos adapters et notre boucle d'agent (voir §8.2) — **fait : non** |
 | v1.3 | Mémoire long terme (SQLite + FTS5 ou `sqlite-vec`) — **fait** : SQLite + FTS5, JSONL importé (§8.14) |
-| v2.0 | `apc serve` (serveur HTTP local) + application Tauri — **`apc serve` fait** (§8.15) ; le client Tauri n'est pas compilable sans les paquets GTK/WebKit de la machine |
+| v2.0 | `apc serve` (serveur HTTP local) + application Tauri — **`apc serve` fait** (§8.15) ; le client Tauri reste à écrire, `tauri` 2.11 se construit sur cette machine |
 | v2.1 | Sandboxing avancé (`landlock`/`seatbelt`) ou plugins WASM |
 
 ---
@@ -572,10 +572,26 @@ destructive, elle, publie `{"ask":{"id":…,"command":…,"risk":…}}` et atten
 synchrone, l'attente bloque un thread du runtime — c'est le même compromis que `TuiApprover`, et il
 est marqué `shortcut:` dans le code.
 
-**Tauri est reporté, pas oublié.** `tauri` 2.11 et ses plugins sont dans le cache cargo, mais
-`pkg-config --exists webkit2gtk-4.1` (comme `libsoup-3.0` et `gtk+-3.0`) échoue sur la machine de
-développement, et l'installation demande `sudo`. Le serveur est donc écrit, testé et livré seul : un
-client qui parle ce protocole n'a plus qu'à exister.
+**Tauri n'a jamais été bloqué par les paquets système.** Un premier `pkg-config --exists
+webkit2gtk-4.1` a fait conclure à l'absence des bibliothèques et renvoyer l'installation à un `sudo`.
+C'était faux : sur la machine de développement (Zorin 17, base Ubuntu 22.04), `libwebkit2gtk-4.1-dev`,
+`libgtk-3-dev` et `libsoup-3.0-dev` sont installés depuis le début. Le blocage venait de Homebrew, qui
+met `pkg-config` et `ld` devant ceux du système : le premier ne cherche pas dans
+`/usr/lib/x86_64-linux-gnu/pkgconfig`, le second n'ajoute pas les bibliothèques qu'il y trouve, d'où
+des `gst_object_ref` et `ucsdet_*` non résolus à l'édition de liens. Avec les binaires système devant,
+`tauri` 2.11 compile et se lie — vérifié sur un crate jetable ne contenant que `tauri` : 2 min 39. La
+recette est donc une variable d'environnement, jamais un `sudo` :
+
+```bash
+PATH=/usr/bin:/bin:$PATH \
+PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
+cargo build
+```
+
+**Le client reste à écrire, mais ce n'est plus une question de faisabilité** : une fenêtre, le flux
+SSE de `/v1/run` consommé côté webview, un bouton d'arrêt et le choix du provider. Il ira dans un
+crate séparé (`apc-desktop`) pour que GTK et WebKit n'entrent ni dans le graphe du binaire `apc` ni
+dans sa barre de 15 Mo.
 
 **Coût mesuré :** `axum` 0.7 ajoute `axum`, `axum-core`, `matchit`, `mime` et `serde_path_to_error`
 au graphe (5 paquets ; `hyper`, `tower`, `http-body` étaient déjà là pour `reqwest`), et le binaire
@@ -585,7 +601,7 @@ release passe de 10 054 128 à **10 455 728** octets — toujours sous la barre 
 
 ## 9. Hors périmètre V1 (explicite)
 
-1. Application Tauri : `apc serve` existe (§8.15), la fenêtre n'est pas écrite — elle ne se lie pas sans `webkit2gtk-4.1`, `libsoup-3.0` et `gtk+-3.0`.
+1. Application Tauri : `apc serve` existe et `tauri` 2.11 se lie ici (§8.15) ; la fenêtre elle-même reste à écrire.
 2. Recherche web (SearXNG) et extraction (Obscura, Firecrawl, Crawl4AI).
 3. Knowledge graph et distillation de la mémoire : la v1.3 livre SQLite + FTS5, rien de plus.
 4. Chargement dynamique de plugins (`.so`/`.dylib`/WASM) : les traits existent, les plugins V1 sont

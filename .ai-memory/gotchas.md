@@ -114,6 +114,24 @@
 - Check TLS without a paid key: `APC_BASE_URL=https://api.openai.com/v1 APC_API_KEY=sk-invalid
   apc run hi` must answer `"status": 401`; a provider panic means the install call is missing.
 
+## Serve (v2.0)
+
+- `Approver::confirm` is **synchronous**, so `ApiApprover` parks a `std::sync::mpsc::Sender` and calls
+  `recv_timeout(120s)`: that blocks a runtime thread while a question is open. Fine for a
+  single-user loopback server; revisit if two runs may be in flight at once.
+- A run's stream is SSE, so an error becomes `{"error": …}` — a status code is only possible for
+  pre-stream failures (401, a malformed body). Don't "improve" this into a 500 mid-stream.
+- `tests/serve.rs` is a separate integration binary: no dev-dependencies, so its HTTP client is
+  hand-written over `TcpStream` and every helper is re-declared locally.
+- Bind is hard-coded to `Ipv4Addr::LOCALHOST`; a `--host` flag would put the agent on the LAN with the
+  token as its only gate.
+- **A Tauri build failure here is not a missing package.** `pkg-config --exists webkit2gtk-4.1` fails
+  and the link then fails on `gst_object_ref`/`ucsdet_*` because Homebrew's `pkg-config` and `ld`
+  shadow the system ones and skip `/usr/lib/x86_64-linux-gnu/pkgconfig`. `libwebkit2gtk-4.1-dev`,
+  `libgtk-3-dev` and `libsoup-3.0-dev` are installed. Fix with
+  `PATH=/usr/bin:/bin:$PATH PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig`,
+  and check `which -a pkg-config ld` before ever suggesting `sudo apt install`.
+
 ## Telemetry / Sentry (dev phase)
 
 - Two independent gates, both required: `telemetry = true` in the resolved config **and** a DSN in

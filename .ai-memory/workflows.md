@@ -24,7 +24,7 @@
 | v1.2 | Outils web : `web_search` (SearXNG) + `fetch_page` (HTTP simple + `rs-trafilatura`, pas Obscura — SPEC §8.13) — **done** ; chargement dynamique de plugins reste hors périmètre (SPEC §8.7) |
 | v1.2b | Décider si `rig` remplace les adapters + la boucle d'agent — kaneo `d6k5r9tql0itnp3c82l5vzfs` (due 2027-04-12) — **done : refusé** (SPEC §8.2) |
 | v1.3 | Long-term memory (SQLite + FTS5 / `sqlite-vec`) — kaneo `o47602h7odoky3hbjckrvrr9` (due 2027-04-26) — **done** : SQLite + FTS5, JSONL importé (SPEC §8.14) |
-| v2.0 | `apc serve` (axum) + Tauri client — kaneo `rfqlho1w48tayi2h8n0u4oey` (due 2027-05-24) — **serve done** (§8.15) ; client Tauri impossible ici (webkit2gtk-4.1/libsoup-3.0/gtk+-3.0 absents, sudo) |
+| v2.0 | `apc serve` (axum) + Tauri client — kaneo `rfqlho1w48tayi2h8n0u4oey` (due 2027-05-24) — **serve done** (§8.15) ; client Tauri à écrire, il compile sur cette machine (piège Homebrew dans `gotchas.md`) |
 | v2.1 | Advanced sandboxing (landlock/seatbelt) or WASM plugins — kaneo `wkjodf93o65nnbou214pform` (due 2027-06-14) |
 
 Chaining: v1.1 blocks v1.2, which blocks v1.2b, which blocks v1.3, which blocks v2.0, which blocks

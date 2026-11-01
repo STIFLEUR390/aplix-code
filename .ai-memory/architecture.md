@@ -238,8 +238,9 @@ via clap `Args`. No precedence logic there.
   blocks a runtime thread (`shortcut:` comment in the file; one thread per live question).
 - `tests/serve.rs` is its own binary: helpers re-declared, HTTP/1.1 written by hand over
   `std::net::TcpStream`, provider faked by the one-shot `TcpListener` SSE stub, child killed by `Drop`.
-- The Tauri client is **not** written: `webkit2gtk-4.1`, `libsoup-3.0` and `gtk+-3.0` are missing here
-  and installing them needs sudo.
+- The Tauri client is **not written**, but it builds here: the dev libraries are installed and only
+  Homebrew's `pkg-config`/`ld` got in the way (`PATH`/`PKG_CONFIG_PATH` fix). It belongs in a separate
+  `apc-desktop` crate so GTK/WebKit stay out of the `apc` binary.
 
 ## Telemetry (Sentry)
 

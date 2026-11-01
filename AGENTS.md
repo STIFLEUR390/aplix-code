@@ -2,7 +2,8 @@
 
 ## State of the repo (check before assuming anything)
 
-v2.0's server is done; only the Tauri window is missing (see below). A Cargo workspace (`crates/*`, 9 crates) whose crates all hold code —
+v2.0's server is done; the Tauri client is not written yet, but it builds here (see the v2.0 note).
+A Cargo workspace (`crates/*`, 9 crates) whose crates all hold code —
 `apc-core` (config + chat types), `apc-traits` (every trait), `apc-models` (HTTP adapters, SSE),
 `apc-memory` (SQLite sessions with FTS5), `apc-decision` (heuristic guard + model store), `apc-tools`
 (file tools + guarded shell), `apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli`
@@ -113,9 +114,13 @@ Before starting one, read its acceptance criteria — they name the traps that b
   download, not the 3 KB/s of the rig spike), and 0.40 dropped `bundled` while 0.41 needs Rust 1.89
   — do not bump without checking both.
 - **v2.0** `apc serve` — **done** (SPEC §8.15): axum 0.7, loopback only, Bearer token in
-  `serve.token`, the guard answered over `POST /v1/confirm`. The Tauri client is **not** written:
-  `pkg-config` finds no `webkit2gtk-4.1`, `libsoup-3.0` or `gtk+-3.0` here, and installing them needs
-  sudo. The crates are cached, the system libraries are not.
+  `serve.token`, the guard answered over `POST /v1/confirm`. The Tauri client is **not written yet**
+  but nothing blocks it: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev` and `libsoup-3.0-dev` are installed.
+  `pkg-config` only said otherwise because Homebrew's `pkg-config` and `ld` shadow the system ones
+  and skip `/usr/lib/x86_64-linux-gnu/pkgconfig`. Build anything GTK/Tauri with both fixed (see
+  Commands); a spike containing only `tauri` 2.11 compiles and links in ~2m40 that way. Put the
+  client in its own crate (`apc-desktop`), never in `apc-cli`, so GTK/WebKit stay out of the 15 MB
+  binary.
 - **v2.1** sandboxing: `landlock`, `wasmtime` and `extism` are **not** cached either.
 
 Cache absence is not fatal — it costs a slow download (~3 KB/s here) — but it must be disclosed
@@ -307,6 +312,16 @@ cargo test -p apc-tools                  # path confinement + a refused confirma
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 cargo build --no-default-features        # compiles the Sentry feature out
+```
+
+Anything that pulls GTK/WebKit (the future `apc-desktop`) needs the system `pkg-config` and `ld`
+ahead of Homebrew's, or it fails on `atk.pc` and then on `gst_object_ref`/`ucsdet_*` at link time —
+neither of which is a missing package:
+
+```bash
+PATH=/usr/bin:/bin:$PATH \
+PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
+cargo build
 ```
 
 The CLI tests spawn `CARGO_BIN_EXE_apc` with a throwaway `HOME`/`XDG_CONFIG_HOME` and clear the
