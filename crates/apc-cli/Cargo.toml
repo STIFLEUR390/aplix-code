@@ -13,8 +13,9 @@ name = "apc"
 path = "src/main.rs"
 
 [features]
-# Dev phase: Sentry is compiled in. The v1.0 release task flips this to `[]`.
-default = ["telemetry"]
+# Telemetry is opt-in at build time: a released binary carries no Sentry code at all.
+# Keep testing it with `cargo test --features telemetry`.
+default = []
 telemetry = ["dep:sentry"]
 # Ask a local-jev sidecar before the heuristics (SPEC.md §8.11).
 open-jev = ["apc-decision/open-jev"]

@@ -64,13 +64,13 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 - **Local Permission Guard** — Every shell command is scored before it runs (`rm -rf`, `DROP TABLE`, `mkfs`…), and anything above the threshold needs an explicit confirmation. The built-in heuristics need no model at all; building with `--features open-jev` lets a local-jev sidecar answer first and falls back to them on any failure.
 - **Multi-provider support** over the two dialects in use (`/chat/completions` compatible OpenAI, `/messages` Anthropic): OpenAI, Anthropic, Ollama, DeepSeek, OpenRouter, Groq, and any compatible local gateway.
 - **Session persistence** — Resume a conversation with `apc chat --continue`.
-- **Opt-in error reporting** — Sentry-compatible, off without a DSN and a config flag.
+- **Opt-in error reporting** — Sentry-compatible, compiled out by default (`--features telemetry` to build it in), off without a DSN and a config flag.
 - **`apc model <cmd>`** — Manage local decision models (`list`, `download`, `status`, `verify`, `remove`), with resumable, SHA-256 verified downloads. The catalog is empty for now: no upstream artifact exists (`SPEC.md` §8.12).
 - **CI and releases** — `fmt`, `clippy -D warnings` and tests in three feature shapes on every push, a 15 MB size gate, and tagged builds for Linux, macOS and Windows.
 
 ### 📦 Still planned
 
-- **Telemetry out of the default feature set** — the release binaries are already built without it; flipping `default = []` ships with the release task (`SPEC.md` §3.4).
+- **crates.io publication** — `apc` installs from source or a release binary today (`SPEC.md` §7).
 
 ### 🔮 Post-MVP (V1.x – V2)
 

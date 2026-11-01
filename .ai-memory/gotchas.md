@@ -87,18 +87,17 @@
   before assuming a missing event is a Sentry bug.
 - `telemetry_enabled()` resolves the config **twice** (once to decide, once for the command) so a
   broken config still reports itself. That duplication is deliberate, ~0.1 ms.
-- `sentry` is a **default** feature right now. Anything that must prove the feature-off path
-  (`sentry` absent from the graph, no dead_code warning) has to build with
-  `--no-default-features`. Feature-off items must stay behind `#[cfg(feature = "telemetry")]` or the
-  build warns.
+- `sentry` is **not** compiled by default (`default = []`). To exercise the telemetry path build with
+  `--features telemetry`; to prove the shipped shape, check that `sentry` is absent from
+  `cargo tree -p apc-cli`. Feature-gated items must stay behind `#[cfg(feature = "telemetry")]` or
+  the default build warns.
 - `panic = "abort"` in the release profile means the Sentry panic hook has nothing to unwind: only
   explicitly captured errors leave a release binary.
 - Never call `sentry::init(())` — the no-argument form reads ambient `SENTRY_DSN` and arms telemetry
   behind the config gate's back. `sentry::init((dsn, options))` keeps the gate explicit.
-- Release artifacts are built `--no-default-features` in CI, but a *local* `cargo build --release`
-  still compiles Sentry (the feature is a dev default). Test the shipped shape explicitly, and
-  remember that `target/debug/apc` can end up being the no-telemetry build after a
-  `cargo test --no-default-features` — run `cargo build -p apc-cli` before blaming Sentry wiring.
+- To test the Sentry path you must now build with `--features telemetry`; a plain
+  `cargo build` produces a binary with no Sentry at all (verified: no crate in the graph, no DSN
+  string, no connection even with `SENTRY_DSN` + `APC_TELEMETRY=1` set).
 - The fmt layer is built with `with_target(false)` and no per-crate filter, so `APC_LOG=debug` also
   prints hyper/reqwest internals (`connecting to …`, `pooling idle connection`). Filtering needs
   `tracing-subscriber`'s `env-filter`/`Targets`; not worth it until the noise actually hurts.

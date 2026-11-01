@@ -137,27 +137,28 @@ dependency to `apc-agent` or `apc-cli`.
 - **No telemetry, analytics or phone-home** — one exception, opt-in Sentry error reporting
   (SPEC §3.4, §8.9): no DSN shipped, `APC_TELEMETRY=0` wins over any DSN, `warn`/`error` only,
   never file/prompt content, initialised in `apc-cli` alone.
-  - **Dev phase (now)**: `telemetry` is a *default* feature in `crates/apc-cli/Cargo.toml` and the
-    git-ignored `.env` sets `APC_TELEMETRY=1` + a local DSN (`localhost:8789`). Debug builds load
-    `.env` via its own `load_dotenv`; release builds never do.
-  - The v1.0 release task (`ykajrzj02vow3xnfvd9s1rv1`) flips `default = []`, swaps in the production
-    DSN and re-checks the size budget. Don't "clean up" the dev defaults before that task.
+  - **`telemetry` is opt-in at build time**: `default = []`, so a normal `cargo build` carries no
+    Sentry code. To work on it, build or test with `--features telemetry` (CI has that shape) and
+    set `telemetry = true` plus a DSN. Debug builds also read `.env` (`load_dotenv`), release builds
+    never do.
+  - Verified at v1.0: the release binary has no sentry crate in its graph, no DSN string, and with
+    `SENTRY_DSN` + `APC_TELEMETRY=1` forced in the environment it still opens no connection.
   - `panic = "abort"` means panic events only reach Sentry in debug builds.
   - The `tracing` subscriber (fmt layer to stderr) is installed unconditionally, so
     `APC_LOG=debug|info|warn|error` gives local logs with no DSN and no network; default is `warn`.
     It is `with_target(false)`, so third-party `debug` events (hyper, reqwest) also print.
-  - Cost of the feature (v0.5, `strip` + `lto`): 7 377 912 B with Sentry + `tracing` vs 5 643 912 B
-    with `--no-default-features` — the HTTP stack, not Sentry, dominates. Still inside the 15 MB
-    budget, but re-measure whenever a dependency is updated.
+  - Cost of the feature (`strip` + `lto`): 7 377 912 B with `--features telemetry` vs 5 643 912 B
+    without — the HTTP stack, not Sentry, dominates. Still inside the 15 MB budget, but re-measure
+    whenever a dependency is updated.
 - **CI is the contract** (`.github/workflows/ci.yml`): `fmt`, `clippy -D warnings` and `test` in
-  **three feature shapes** — default, `--features open-jev`, `--no-default-features` — plus a
+  **three feature shapes** — default, `--features open-jev`, `--features telemetry` — plus a
   release build on Linux/macOS/Windows with a 15 MB size gate (`wc -c` < 15728640, `apc.exe` on
   Windows). Reproduce a failure with the same shape locally before pushing; a shape you did not
   run is a shape that can fail in CI.
 - **Release artifacts are built `--no-default-features`** (`.github/workflows/release.yml`, tags
   `v*`): published binaries contain no Sentry code, so no event can leave a release even with
-  `SENTRY_DSN` set. The `telemetry` feature stays a *dev* default; flipping `default = []` belongs
-  to the release task `ykajrzj02vow3xnfvd9s1rv1`.
+  `SENTRY_DSN` set. `default = []` has been the case since the release task; never put
+  `telemetry` back in `default`.
 - **`#![forbid(unsafe_code)]` in every crate, no exception** in V1 (SPEC §8.8).
 - **Binary < 15 MB**, models downloaded on demand (resumable + SHA-256 verified), never bundled.
   Release profile: `lto`, `codegen-units = 1`, `strip = "symbols"`, `panic = "abort"`,

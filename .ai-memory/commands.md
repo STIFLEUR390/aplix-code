@@ -48,7 +48,7 @@ ls -lh target/release/apc             # must stay under 15 MB (7.38 MB with Sent
 
 ```bash
 # exactly what .github/workflows/ci.yml runs (three feature shapes)
-for f in "" "--features open-jev" "--no-default-features"; do
+for f in "" "--features open-jev" "--features telemetry"; do
   cargo clippy --offline --all-targets $f -- -D warnings && cargo test --offline --workspace $f
 done
 
@@ -140,10 +140,11 @@ cargo build --no-default-features                    # compiles the `telemetry` 
 APC_LOG=debug target/debug/apc run "…"                    # local logs, no DSN, no network
 ```
 
-Current state (dev phase): `telemetry` is a **default** feature of `apc-cli`, `.env` (git-ignored)
-sets `APC_TELEMETRY=1` + `http://…@localhost:8789/5`, and debug builds read `.env` from the current
-directory through the 15-line `load_dotenv` in `main.rs` (release builds never call it). Runtime
-still needs **both** gates: `telemetry = true` in the resolved config and a DSN in the environment.
+Since v1.0 `default = []`: a normal build has **no Sentry code**. Work on it with
+`cargo build --features telemetry` (and `cargo test --workspace --features telemetry`), plus
+`telemetry = true` in the config and a DSN in the environment — both runtime gates still apply.
+`.env` (git-ignored) no longer sets `APC_TELEMETRY`; debug builds read it through the 15-line
+`load_dotenv` in `main.rs` (release builds never do).
 
 Verify delivery without reading the relay: point the DSN at a one-shot listener and force an error
 (broken `apc.toml` is enough).

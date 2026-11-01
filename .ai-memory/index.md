@@ -45,7 +45,7 @@ for the README's version of a §8 decision, say why it was changed instead of si
 - **v1.0 is in place.** Cargo workspace at `crates/*` (9 crates, `resolver = "2"`, edition 2021,
   MSRV 1.80), every crate holds code: config, traits, HTTP adapters, JSONL sessions, heuristic guard
   + `open-jev` sidecar client, the resumable model store, file/shell tools, the agent loop, the tool
-  registry and the `apc` binary; local `tracing` logs are always on, Sentry stays opt-in. CI runs
+  registry and the `apc` binary; local `tracing` logs are always on, Sentry is compiled only with `--features telemetry`. CI runs
   fmt, clippy and tests in three feature shapes, and tags build Linux/macOS/Windows artifacts under
   a 15 MB size gate. `apc model` works but its catalog is empty on purpose (no upstream
   artifact, SPEC §8.12). Still targets, not code: hooks, context compaction, intent classification.

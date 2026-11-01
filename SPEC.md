@@ -134,9 +134,10 @@ première compilation, et elle reste le filet de sécurité en production.
 - **Contenu envoyé** : erreurs, panics, et breadcrumbs `tracing` de niveau `warn`/`error` uniquement
   par défaut. Jamais le contenu des fichiers, des prompts ni des réponses du modèle. Le suivi de
   session (`release-health`) est désactivé : ce sont des métriques d'usage.
-- **Phase de développement** : la feature `telemetry` est une feature **par défaut** et le `.env`
-  local (non commité) arme `APC_TELEMETRY=1` avec un DSN local. La tâche de release v1.0 la retire
-  de `default`, remplace le DSN et vérifie qu'aucun DSN n'est livré dans le binaire.
+- **Compilation opt-in** : depuis la v1.0, `default = []` — un `cargo build` normal ne contient
+  aucun code Sentry. Pour travailler dessus : `--features telemetry`, `telemetry = true` et un DSN.
+  Le `.env` local (non commité) ne sert plus qu'à ça. Vérifié : ni crate `sentry` dans le graphe, ni
+  DSN dans le binaire, et aucune connexion même avec `SENTRY_DSN` + `APC_TELEMETRY=1` forcés.
 - **Limite connue** : `panic = "abort"` (profil release) supprime le déroulement de pile, donc le
   hook de panic Sentry ne peut rien envoyer en release ; seules les erreurs capturées explicitement
   partent. En debug (unwind) les panics sont remontées.
