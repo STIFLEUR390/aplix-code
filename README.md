@@ -220,7 +220,7 @@ If we forgot someone, please open an issue — it's not intentional.
 
 ## 📄 License
 
-MIT — see [./LICENSE.md](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 `aplix code` is an independent, community-driven project. It is not affiliated with OpenAI, Anthropic, or any of the projects listed above.
 
@@ -233,4 +233,3 @@ MIT — see [./LICENSE.md](LICENSE).
 *Star the repo if you believe local-first agents are the future.*
 
 </div>
-```
