@@ -4,7 +4,8 @@
 
 - `README.md` (vision) and `SPEC.md` (MVP) describe the **target**. v1.0 code exists (workspace,
   config, `apc init`/`config`/`run`/`chat`/`model`, JSONL sessions, tools + guard, `open-jev` client,
-  model store, opt-in Sentry, CI + release workflows). Still absent: `skills/`, hooks,
+  model store, opt-in Sentry, CI + release workflows, intent classification + `skills/`). Still
+  absent: hooks,
   `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/`; the crate is not on crates.io, so installs go through
   `cargo install --path crates/apc-cli --locked`.
 - Coding tasks name a crate that may still be a placeholder — check its `src/lib.rs` before assuming

@@ -17,7 +17,7 @@ crates/
   apc-memory/    JSONL session store (+ future backends)
   apc-plugins/   static plugin registry
   apc-cli/       the `apc` binary — composition root
-skills/          Markdown skill definitions (v1.1+, does not exist yet)
+skills/          Markdown skill definitions, read as the system prompt (v1.1)
 ```
 
 Dependency direction: `apc-core` at the bottom, `apc-traits` above it, plugin crates depend on both,
@@ -229,6 +229,5 @@ client; only `apc-cli` does.
 
 ## Post-MVP (do not build during an MVP task)
 
-`ratatui` TUI (v1.1), intent classification (v1.1), `skills/` (v1.1), SearXNG + Obscura plugins
-(v1.2), SQLite/`sqlite-vec` long-term memory (v1.3), `apc serve` + Tauri (v2.0), Landlock/Seatbelt
-or WASM sandboxing (v2.1), dynamic plugin loading (v1.2).
+SearXNG + Obscura plugins (v1.2), SQLite/`sqlite-vec` long-term memory (v1.3), `apc serve` + Tauri
+(v2.0), Landlock/Seatbelt or WASM sandboxing (v2.1), dynamic plugin loading (v1.2).

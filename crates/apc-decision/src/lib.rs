@@ -7,11 +7,13 @@
 //! wiped disk.
 
 mod cascade;
+pub mod intent;
 #[cfg(feature = "open-jev")]
 mod jev;
 pub mod store;
 
 pub use cascade::Cascade;
+pub use intent::{classify, Intent};
 #[cfg(feature = "open-jev")]
 pub use jev::JevProvider;
 pub use store::{find, ModelEntry, Status, Store, CATALOG};

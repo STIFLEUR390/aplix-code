@@ -7,8 +7,8 @@ v1.1 is in progress: a Cargo workspace (`crates/*`, 9 crates) whose crates all h
 (JSONL sessions), `apc-decision` (heuristic guard + model store), `apc-tools` (file tools + guarded
 shell), `apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli` (`init`, `config`,
 `run`, `chat` (REPL or full-screen view), `model`, `--version`). CI and tagged cross-platform
-releases live in `.github/workflows/`. Hooks, context compaction, intent classification and
-`skills/` do **not** exist yet. Read the tree before assuming a module exists.
+releases live in `.github/workflows/`. Hooks and context compaction do **not** exist yet. Read the
+tree before assuming a module exists.
 
 ## Sources of truth
 
@@ -127,6 +127,19 @@ still exists in `main::repl` and must keep working.
   `wrapped_height` helper. `Style::new().red()` does not exist either — use `Style::default().fg(…)`.
 - Test it through a real pty: `script` alone leaves the window 0x0 and ratatui draws nothing, so set
   `TIOCSWINSZ` (see `.ai-memory/commands.md` for the driver script).
+
+## Intent classification and skills (v1.1)
+
+- `apc_decision::classify(prompt)` (`crates/apc-decision/src/intent.rs`) is **heuristic only**: a
+  lowercase substring match over `KEYWORDS`, and the keyword appearing **earliest** wins, so "ajoute
+  un commentaire" is code generation, not an explanation. No model, like the guard.
+- `Intent::skill()` maps to a file stem under `skills/`; `Intent::Other` has none.
+- `apply_skill` in `crates/apc-cli/src/main.rs` reads `./skills/<stem>.md` and puts it at index 0 as
+  a system message, replacing any previous one. It is **not persisted**: `apc chat` reloads the
+  session every turn and re-derives it, and `before` is captured after the insert so the persisted
+  slice still starts at the user's prompt. A missing file means no system prompt, never an error —
+  that is what keeps `apc` working in a project without `skills/`.
+- Only `apc-cli` does this I/O; `apc-agent` stays prompt-neutral.
 
 ## Session memory (v0.2b)
 
@@ -301,7 +314,8 @@ in `.ai-memory/workflows.md` — update those, don't create duplicates.
 ## Working notes
 
 - Project knowledge lives in `.ai-memory/` — read `index.md` first.
-- `skills/` is a planned top-level dir of Markdown skill definitions (v1.1, does not exist yet).
+- `skills/` holds the Markdown skill definitions (`generate_code.md`, `explain_code.md`,
+  `review_code.md`); `apc` reads `./skills/<name>.md` and puts it at the head of the conversation.
 - Don't reach for the `rea` MCP here: it analyses shipped binaries/bundles, not a source repo. The
   repo also has no `.codegraph/` index — `grep`/`find` is enough; indexing is the owner's call.
 - `SPEC.md` is in French (the owner's source document); `README.md`, `AGENTS.md`, code and

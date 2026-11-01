@@ -340,8 +340,11 @@ texte simple ; `ratatui` + `crossterm` arrivent en V1.1.
 **Livré en v1.1** : `crates/apc-cli/src/tui.rs` — transcript scrollable, saisie une ligne, spinner,
 flux en direct, et le Permission Guard affiché dans la barre de statut (`y`/`n`) au lieu d'écraser
 la vue. `apc chat` ne l'utilise que si stdin **et** stdout sont des terminaux ; sinon il retombe sur
-le REPL texte, ce dont dépendent les tests et les scripts. La classification d'intention et `skills/`
-restent à faire.
+le REPL texte, ce dont dépendent les tests et les scripts. La classification d'intention est un classifieur
+heuristique local (`apc_decision::classify` : `generate_code`, `explain_code`, `review_code`,
+`other`) qui choisit le skill à charger : si le projet a `skills/<nom>.md`, son contenu est inséré en
+tête de conversation comme message système, sans être persisté. Pas de fichier, pas de prompt
+système ; aucun modèle local n'est nécessaire.
 
 ### 8.7 Neuf crates conservés (dont `apc-memory` et `apc-plugins`)
 

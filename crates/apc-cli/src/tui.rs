@@ -4,6 +4,7 @@
 //! what the CLI tests and any script rely on.
 
 use std::io::IsTerminal;
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
@@ -186,6 +187,7 @@ pub async fn chat(
     session: SessionId,
     messages: Vec<Message>,
     asks: Receiver<Ask>,
+    root: PathBuf,
 ) -> Result<()> {
     let mut terminal = ratatui::init();
     let mut app = App {
@@ -240,6 +242,7 @@ pub async fn chat(
                     session.clone(),
                     Message::user(prompt.trim()),
                     tx,
+                    root.clone(),
                 ));
             }
         }
@@ -271,6 +274,7 @@ async fn run_turn(
     session: SessionId,
     prompt: Message,
     tx: UnboundedSender<Event>,
+    root: PathBuf,
 ) {
     let result = match JsonlStore::new() {
         Ok(store) => {
@@ -281,6 +285,7 @@ async fn run_turn(
                     return;
                 }
             };
+            super::apply_skill(&mut messages, &root, &prompt.content);
             let before = messages.len();
             messages.push(prompt);
             if let Err(error) = store.append(&session, &messages[before]).await {

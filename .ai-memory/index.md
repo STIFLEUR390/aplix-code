@@ -49,7 +49,7 @@ for the README's version of a §8 decision, say why it was changed instead of si
   registry and the `apc` binary; local `tracing` logs are always on, Sentry is compiled only with `--features telemetry`. CI runs
   fmt, clippy and tests in three feature shapes, and tags build Linux/macOS/Windows artifacts under
   a 15 MB size gate. `apc model` works but its catalog is empty on purpose (no upstream
-  artifact, SPEC §8.12). Still targets, not code: hooks, context compaction, intent classification.
+  artifact, SPEC §8.12). Still targets, not code: hooks, context compaction.
   Check `crates/<crate>/src` before trusting a doc claim.
 - Do not add a provider/backend-specific dependency to `apc-agent` or `apc-cli`; swappable behaviour
   goes behind a trait in `apc-traits`.

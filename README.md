@@ -54,7 +54,7 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ## ✨ Features
 
-### ✅ Working today (`v1.0`)
+### ✅ Working today (`v1.1`)
 
 - **`apc run "<prompt>"`** — One-shot agent mode: streams the answer, calls tools, guards shell.
 - **`apc chat`** — Full-screen chat view (`ratatui`): scrollable transcript, live streaming, the
@@ -62,6 +62,9 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 - **`apc init`** — Generate a commented `apc.toml` config file.
 - **`apc config`** — Print the effective configuration and which layer supplied each key.
 - **Built-in tools**: `read_file`, `write_file`, `list_dir`, `run_shell`.
+- **Intent classification and skills** — A local heuristic tags each prompt (`generate_code`,
+  `explain_code`, `review_code`, `other`), no model needed, and the matching `skills/<name>.md` of the
+  current project heads the conversation as the system prompt. No skill file, no system prompt.
 - **Local Permission Guard** — Every shell command is scored before it runs (`rm -rf`, `DROP TABLE`, `mkfs`…), and anything above the threshold needs an explicit confirmation. The built-in heuristics need no model at all; building with `--features open-jev` lets a local-jev sidecar answer first and falls back to them on any failure.
 - **Multi-provider support** over the two dialects in use (`/chat/completions` compatible OpenAI, `/messages` Anthropic): OpenAI, Anthropic, Ollama, DeepSeek, OpenRouter, Groq, and any compatible local gateway.
 - **Session persistence** — Resume a conversation with `apc chat --continue`; sessions are JSONL under
@@ -77,7 +80,6 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ### 🔮 Post-MVP (V1.x – V2)
 
-- Rich TUI with [`ratatui`](https://crates.io/crates/ratatui).
 - Local memory (SQLite + `sqlite-vec` for RAG over past sessions).
 - **SearXNG** web search (self-hosted, private).
 - **Obscura**-based web extraction.
@@ -228,7 +230,7 @@ cargo test --workspace                        # fmt + clippy -D warnings are par
 | **v0.4** | `apc model` subcommand + resumable, verified downloads |
 | **v0.5** | Opt-in telemetry: local `tracing` logs + Sentry, off by default |
 | **v1.0** | MVP: CLI, docs, CI matrix and cross-platform release builds |
-| **v1.1** | `ratatui`-based TUI — done; intent classification and `skills/` next |
+| **v1.1** | `ratatui` TUI, intent classification, project `skills/` |
 | **v1.2** | SearXNG + Obscura plugins |
 | **v1.3** | Long-term memory (SQLite + FTS5 / `sqlite-vec`) |
 | **v2.0** | `apc serve` + Tauri desktop app |

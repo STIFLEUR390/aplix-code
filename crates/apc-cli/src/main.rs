@@ -9,7 +9,7 @@ use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use directories::ProjectDirs;
 
-use apc_core::chat::{ChatEvent, Message};
+use apc_core::chat::{ChatEvent, Message, Role};
 use apc_core::config::{self, Layer, Loaded, Source};
 use apc_memory::JsonlStore;
 use apc_traits::{Approver, DecisionProvider, MemoryStore};
@@ -209,7 +209,10 @@ fn telemetry_enabled(cli: &Cli) -> bool {
 async fn run_prompt(args: &RunArgs) -> Result<()> {
     let (loaded, _) = resolve(&args.overrides)?;
     let agent = agent(&loaded.config, std::sync::Arc::new(StdinApprover))?;
-    let mut messages = vec![Message::user(args.prompt.join(" "))];
+    let prompt = args.prompt.join(" ");
+    let mut messages = Vec::new();
+    apply_skill(&mut messages, &current_dir()?, &prompt);
+    messages.push(Message::user(prompt));
     agent.run(&mut messages, print_delta).await?;
     println!();
     Ok(())
@@ -227,7 +230,14 @@ async fn chat(args: &ChatArgs) -> Result<()> {
 
     let (approver, asks) = tui::TuiApprover::channel();
     let agent = agent(&loaded.config, std::sync::Arc::new(approver))?;
-    tui::chat(std::sync::Arc::new(agent), session, messages, asks).await
+    tui::chat(
+        std::sync::Arc::new(agent),
+        session,
+        messages,
+        asks,
+        current_dir()?,
+    )
+    .await
 }
 
 /// Resumes the latest session or starts a new one.
@@ -255,6 +265,7 @@ async fn repl(
     mut messages: Vec<Message>,
 ) -> Result<()> {
     let agent = agent(&config, std::sync::Arc::new(StdinApprover))?;
+    let root = current_dir()?;
 
     loop {
         print!("› ");
@@ -271,6 +282,7 @@ async fn repl(
             break;
         }
         let question = Message::user(text);
+        apply_skill(&mut messages, &root, text);
         store.append(&session, &question).await?;
         messages.push(question);
 
@@ -291,6 +303,21 @@ fn print_delta(event: &ChatEvent) {
         print!("{delta}");
         let _ = io::stdout().flush();
     }
+}
+
+/// Put the skill matching `prompt` at the head of the conversation.
+///
+/// Skills are Markdown files at `<root>/skills/<name>.md` (SPEC.md §7). A missing file means no
+/// skill, never an error. The message is not persisted: it is re-derived from each prompt.
+fn apply_skill(messages: &mut Vec<Message>, root: &std::path::Path, prompt: &str) {
+    let Some(name) = apc_decision::classify(prompt).skill() else {
+        return;
+    };
+    let Ok(text) = std::fs::read_to_string(root.join("skills").join(format!("{name}.md"))) else {
+        return;
+    };
+    messages.retain(|message| message.role != Role::System);
+    messages.insert(0, Message::system(text.trim()));
 }
 
 /// One agent with the built-in tools and the heuristic guard.
@@ -599,4 +626,44 @@ fn flags(args: &Overrides) -> Result<Option<Layer>> {
         "command line",
         pairs,
     )?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_skill;
+    use apc_core::chat::Message;
+
+    /// A throwaway directory: no `tempfile` dependency for two tests.
+    fn sandbox(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("apc-skill-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("skills")).expect("create the sandbox");
+        dir
+    }
+
+    #[test]
+    fn a_matching_skill_heads_the_conversation_and_replaces_the_previous_one() {
+        let dir = sandbox("head");
+        std::fs::write(dir.join("skills/generate_code.md"), "write tests first\n")
+            .expect("write the skill");
+        std::fs::write(dir.join("skills/explain_code.md"), "answer in French\n")
+            .expect("write the skill");
+
+        let mut messages = vec![Message::user("older")];
+        apply_skill(&mut messages, &dir, "écris une fonction");
+        assert_eq!(messages[0], Message::system("write tests first"));
+        apply_skill(&mut messages, &dir, "explique ce code");
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0], Message::system("answer in French"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn no_skill_file_means_no_system_message() {
+        let dir = sandbox("missing");
+        let mut messages = vec![Message::user("hello")];
+        apply_skill(&mut messages, &dir, "review this");
+        assert_eq!(messages, vec![Message::user("hello")]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
