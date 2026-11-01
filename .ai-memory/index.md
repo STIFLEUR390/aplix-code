@@ -42,9 +42,10 @@ for the README's version of a §8 decision, say why it was changed instead of si
 
 ## Hard rules
 
-- **The repo is documentation only.** `README.md`, `SPEC.md`, `LICENSE`, `AGENTS.md`,
-  `.ai-memory/` — no `Cargo.toml`, no `crates/`, no CI, no tests. Anything that looks like a command
-  or a file in the docs is a *target*, not a fact. Check the tree before running or editing.
+- **v0.1 is in place.** Cargo workspace at `crates/*` (9 crates, `resolver = "2"`, edition 2021,
+  MSRV 1.80). `apc-core` holds the config schema + layer resolution; `apc-cli` holds the `apc` binary
+  (`init`, `config`, `--version`). The other seven crates are placeholders — a command or type you
+  read about in the docs may still be a *target*, not code.
 - Do not add a provider/backend-specific dependency to `apc-agent` or `apc-cli`; swappable behaviour
   goes behind a trait in `apc-traits`.
 - Every `run_shell` passes the Permission Guard (`P > 0.8` ⇒ confirmation). No bypass.

@@ -1,7 +1,8 @@
 # Architecture (SPEC §4)
 
-Nothing here exists in the tree yet; this is the contract to implement against. `SPEC.md` is the
-reference; `README.md` §Architecture is the same layout minus the V1 refinements below.
+v0.1 implements the bottom of the stack: `apc-core` (config) and `apc-cli` (binary). The rest is the
+contract to implement against. `SPEC.md` is the reference; `README.md` §Architecture is the same
+layout minus the V1 refinements below.
 
 ## Crate layout
 
@@ -77,14 +78,31 @@ Guard only).
 
 ## CLI surface
 
-| Command | Priority |
-| :--- | :--- |
-| `apc run "<prompt>"` | P0 |
-| `apc chat` (plain REPL; `--continue` resumes) | P0 |
-| `apc init` | P0 |
-| `apc model list\|download\|status\|verify\|remove` | P0 |
-| `apc --version` (also prints the loaded decision model) | P0 |
-| `apc config` (effective config + which layer set it) | P1 |
+| Command | Priority | State |
+| :--- | :--- | :--- |
+| `apc run "<prompt>"` | P0 | v0.2 |
+| `apc chat` (plain REPL; `--continue` resumes) | P0 | v0.2 |
+| `apc init` | P0 | **done** |
+| `apc model list\|download\|status\|verify\|remove` | P0 | v0.4 |
+| `apc --version` (also prints the loaded decision model) | P0 | **done** (`decision model: none (heuristic fallback)`) |
+| `apc config` (effective config + which layer set it) | P1 | **done** |
+
+## Config (v0.1)
+
+`apc-core::config`:
+
+- `Config { provider { name, model }, decision { threshold }, telemetry }`, `Serialize`/`Deserialize`
+  with `#[serde(default, deny_unknown_fields)]`.
+- `Layer { source, table }` + `Source { Defaults, User, Project, Local, Env, Flag }` (declaration
+  order *is* the precedence order). Defaults are themselves a `Layer`, so provenance has no special
+  case.
+- `resolve(&[Layer]) -> Loaded { config, sources }`: deep-merges tables, then walks each layer's
+  leaves to record `sources["decision.threshold"] = Source::Project`.
+- `TEMPLATE` = the commented file written by `apc init`, and the documented key list.
+- `scalar`/`boolean` parse `APC_*` strings (env vars are strings, TOML is typed).
+
+`apc-cli::main` owns the I/O: `ProjectDirs::from("dev", "aplix", "aplix")` for the user file, flags
+via clap `Args`. No precedence logic there.
 
 ## Providers
 

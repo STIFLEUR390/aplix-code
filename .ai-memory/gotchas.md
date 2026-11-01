@@ -2,11 +2,26 @@
 
 ## Repository reality vs docs
 
-- `README.md` (vision) and `SPEC.md` (MVP) describe the **target**. The tree is documentation only:
-  no `Cargo.toml`, no `crates/`, no CI, no tests, no `skills/`, no `CONTRIBUTING.md`, no
-  `.github/ISSUE_TEMPLATE/`. Never run `cargo build` "to check" without looking at the tree first.
-- Any task naming an `apc-*` crate means *create* it, not edit it.
-- Git history is README edits only — no code history to learn from.
+- `README.md` (vision) and `SPEC.md` (MVP) describe the **target**. v0.1 code exists (workspace +
+  config + `apc init`/`config`); `apc run`/`chat`/`model`, all traits and the other seven crates do
+  not. Still absent: CI, `skills/`, `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/`.
+- Coding tasks name a crate that may still be a placeholder — check its `src/lib.rs` before assuming
+  a module exists.
+
+## Config resolution (v0.1)
+
+- `apc-core::config` is the only place that knows the precedence order; the CLI just builds `Layer`s
+  (files, then env, then flags) and calls `resolve`.
+- `TEMPLATE` is both the file written by `apc init` and the documented key list. `template_matches_the_defaults`
+  breaks the moment the two drift — that test is the guard, not a formality.
+- TOML scoping bit once already: a `telemetry = false` placed after `[decision]` becomes
+  `decision.telemetry` and fails to deserialize. Top-level keys stay above the first `[table]`.
+- `deny_unknown_fields` on `Config`/sections is intentional: `[provder]` must be an error. If a key is
+  ever removed, users get a hard failure — that is the trade-off chosen, not an oversight.
+- `Layer::validate` re-deserializes each layer so a bad value names the file it came from. Env and
+  flag layers go through the same path, labelled `environment` / `command line`.
+- Empty `APC_*` values are ignored (treated as unset). `APC_TELEMETRY` accepts
+  `1/0/true/false/yes/no/on/off`, not just TOML booleans.
 
 ## Spec vs README: traps
 
@@ -94,5 +109,6 @@ the reason is the most likely regression here:
 
 ## Naming
 
-- `aplix-code` = package/repo, `apc` = binary. `cargo install aplix-code` produces `apc`.
+- `aplix-code` = repo name, not a crate. Binary crate `apc-cli`, bin name `apc`
+  (`cargo install --path crates/apc-cli`); the README's `cargo install aplix-code` is a v1.0 target.
 - Config file is `apc.toml` (not `aplix.toml`, not `.apcrc`).

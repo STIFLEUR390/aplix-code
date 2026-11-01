@@ -1,16 +1,18 @@
 # Commands
 
-**None of these work today** — there is no `Cargo.toml` yet. They are the target commands; verify
-against the real manifest once the workspace exists.
+v0.1 is implemented; commands marked *target* do not exist yet.
 
 ## Build / run
 
 ```bash
 cargo build --release
 ./target/release/apc --version        # also prints the loaded decision model
-cargo run -p apc-cli -- run "explain src/main.rs"
-cargo run -p apc-cli -- chat --continue
+./target/release/apc init             # writes ./apc.toml
+./target/release/apc config           # effective config + the layer behind each key
+cargo run -p apc-cli -- config --model llama3   # flag layer override
 ```
+
+*Target (v0.2+):* `apc run "<prompt>"`, `apc chat [--continue]`, `apc model <cmd>`.
 
 Requires Rust 1.80+. Only system dependency expected: OpenSSL, or `rustls` if the feature is enabled.
 
@@ -20,25 +22,27 @@ Requires Rust 1.80+. Only system dependency expected: OpenSSL, or `rustls` if th
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --workspace
-ls -lh target/release/apc             # must stay under 15 MB
+ls -lh target/release/apc             # must stay under 15 MB (893 KB at v0.1)
 ```
 
 ## Single test / single crate
 
 ```bash
-cargo test -p apc-decision                 # one crate
-cargo test -p apc-decision permission      # one test (substring match)
-cargo test permission_guard -- --nocapture # one test + stdout
+cargo test -p apc-core config              # one crate, tests matching "config"
+cargo test -p apc-cli --test cli           # CLI end-to-end
+cargo test precedence -- --nocapture       # one test + stdout
 ```
 
-## Workspace scaffolding (v0.1)
+`crates/apc-cli/tests/cli.rs` spawns `CARGO_BIN_EXE_apc` with a sandbox `HOME`/`XDG_CONFIG_HOME` per
+test (`std::env::temp_dir()/apc-cli-<pid>-<name>`), so it needs no extra dev-dependency and never
+reads the developer's real config.
 
-```bash
-cargo new --lib crates/apc-core      # repeat per crate; apc-cli is a bin
-```
+## Workspace shape (v0.1)
 
-Root manifest: `[workspace] members = ["crates/*"]`, `resolver = "2"`, `[workspace.package]`,
-`[workspace.dependencies]` (see `research.md`), plus the release profile:
+Root `Cargo.toml`: `members = ["crates/*"]`, `resolver = "2"`, `[workspace.package]` (version, edition
+2021, `rust-version = "1.80"`, MIT), `[workspace.dependencies]` (`apc-core`, `anyhow`, `clap`,
+`directories`, `serde`, `thiserror`, `toml` — add entries only when a crate uses them), plus the
+release profile:
 
 ```toml
 [profile.release]
@@ -49,14 +53,27 @@ panic = "abort"
 opt-level = 3
 ```
 
-## CLI surface (target)
+Config paths: user `~/.config/aplix/apc.toml` (`ProjectDirs::from("dev", "aplix", "aplix")`), project
+`./apc.toml`, local `./apc.local.toml`, env `APC_PROVIDER`/`APC_MODEL`/`APC_PERMISSION_THRESHOLD`/
+`APC_TELEMETRY`, flags `--provider`/`--model`/`--permission-threshold`.
+
+`.env` at the repo root holds the local test values (git-ignored): `APC_PROVIDER=openai`,
+`APC_BASE_URL=http://127.0.0.1:31415`, `APC_API_KEY=…`, `APC_MODEL=auto`, `APC_SENTRY_DSN=…`.
+Nothing reads that file yet — no dotenv loader is wired in, and v0.1 only sees variables already
+exported in the shell:
+
+```bash
+set -a && . ./.env && set +a && cargo run -p apc-cli -- config
+```
+
+## CLI surface
 
 ```bash
 apc init                        # writes a commented apc.toml
 apc config                      # effective config + which layer set each key (P1)
-apc run "<prompt>"
-apc chat [--continue]
-apc model list
+apc run "<prompt>"              # target (v0.2)
+apc chat [--continue]           # target (v0.2)
+apc model list                  # target (v0.4)
 apc model download open-jev     # ~350 MB, resumable + SHA-256 verified
 apc model status
 apc model verify

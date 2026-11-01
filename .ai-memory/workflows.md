@@ -3,8 +3,8 @@
 ## Starting a session
 
 1. Read `index.md`, then the one doc matching the task.
-2. `ls` / `find` the tree — confirm whether the workspace has been scaffolded yet. `AGENTS.md` and
-   `index.md` describe the documentation-only state; update them the moment that changes.
+2. Check the tree: v0.1 is implemented, later milestones are not. Don't trust a doc claim about a
+   module without looking at `crates/<crate>/src`.
 3. For an MVP task, open `SPEC.md` at the relevant section. When the request contradicts a §8
    decision, say so instead of reverting silently.
 
@@ -12,7 +12,7 @@
 
 | Version | Milestone |
 | :--- | :--- |
-| v0.1 | Workspace skeleton, `apc init`, config resolution, `apc config` |
+| v0.1 | Workspace skeleton, `apc init`, config resolution, `apc config` — **done** |
 | v0.2 | `apc run` + `apc chat` (plain REPL) via `genai`, streaming |
 | v0.3 | Permission Guard: heuristic, then `open-jev` + fallback |
 | v0.4 | `apc model` + resumable downloads |
@@ -61,10 +61,12 @@ status/tickets through these IDs instead of creating duplicates:
 
 Labels: `mvp`, `security`, `telemetry`, `release`, `post-mvp`.
 
+v0.1 (`jj90o5xa0x4igxpd7rfjeal4`) is implemented and sits in **In Review** — move it to Done once
+the owner has looked at the diff.
+
 ## Before declaring work done
 
-- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`
-  (once they exist).
+- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`.
 - Re-check the constraints this repo is judged on: no unsafe, no default-on telemetry (Sentry is
   opt-in and inert without a DSN), no provider-specific dep
   in `apc-agent`/`apc-cli`, release binary still under 15 MB (`ls -lh target/release/apc`),
