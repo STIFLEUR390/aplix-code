@@ -232,6 +232,11 @@ via clap `Args`. No precedence logic there.
   The prompt is appended before the provider call, the assistant tail after the run.
 - `GET /v1/sessions` → `[{"session","messages"}]` (from `SqliteStore::sessions()`);
   `GET /v1/config` → the resolved `Config` (`SessionId` derives serde for this).
+- `GET /v1/providers` → `apc_models::names()`; `POST /v1/run` also takes `provider`/`model`, and
+  `with_override()` clears `base_url` when the provider changes. CORS is permissive for the webview.
+- **`crates/apc-desktop`** is the Tauri client: `src/main.rs` opens one window and injects
+  `window.APC_TOKEN` via `initialization_script`; `ui/index.html` is the whole client (no bundler, no
+  IPC, no capabilities). It is excluded from the root workspace and has its own `Cargo.lock`.
 - `ApiApprover` replaces `StdinApprover`: it emits `{"ask":{"id","command","risk"}}`, parks a
   `std::sync::mpsc::Sender<bool>` in `Server::pending`, and `POST /v1/confirm {id, allow}` answers it.
   `receiver.recv_timeout(120s)` that expires = refused. `Approver::confirm` is sync, so the wait

@@ -75,6 +75,20 @@ pub fn build(provider: &Provider) -> Result<Box<dyn ModelAdapter>> {
 }
 
 /// `(dialect, default base url, key variable)` for a provider name.
+/// The providers this build can talk to, in the order the error message lists them.
+///
+/// One source of truth for the CLI, `apc serve`'s `/v1/providers` and the desktop client.
+pub fn names() -> &'static [&'static str] {
+    &[
+        "openai",
+        "anthropic",
+        "deepseek",
+        "openrouter",
+        "groq",
+        "ollama",
+    ]
+}
+
 fn defaults(name: &str) -> Result<(Dialect, &'static str, Option<&'static str>)> {
     Ok(match name {
         "openai" => (
@@ -477,6 +491,18 @@ fn truncate(text: &str, limit: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every name the UI offers must resolve: a list entry that errors at build time is a bug.
+    #[test]
+    fn every_listed_provider_resolves() {
+        for name in names() {
+            assert!(
+                defaults(name).is_ok(),
+                "{name} is listed but has no defaults"
+            );
+        }
+        assert!(!names().contains(&"gemini"), "gemini has no dialect yet");
+    }
 
     fn events(dialect: Dialect, payload: &str) -> (Vec<ChatEvent>, bool) {
         let mut calls = Vec::new();

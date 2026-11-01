@@ -88,9 +88,8 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 - Vector recall over past sessions (`sqlite-vec`), once embeddings are computed locally.
 - JavaScript-rendered page extraction (CDP or `obscura mcp --http`, `SPEC.md` §8.13).
 - Dynamic plugin loading (native `.so` or WASM).
-- `apc serve` — local HTTP server (loopback + token, SSE), for editor integrations. Shipped in
-  `v2.0`; the desktop client is still to come.
-- **Tauri desktop app** (a thin client over `apc serve`).
+- Packaged desktop builds (`tauri bundle`): `crates/apc-desktop` is a working window today, but this
+  repo does not produce installers.
 - Advanced sandboxing (Landlock / Seatbelt).
 
 ---
@@ -238,7 +237,7 @@ cargo test --workspace                        # fmt + clippy -D warnings are par
 | **v1.1** | `ratatui` TUI, intent classification, project `skills/` |
 | **v1.2** | SearXNG + Obscura plugins |
 | **v1.3** | Long-term memory (SQLite + FTS5, old JSONL sessions imported) |
-| **v2.0** | `apc serve` + Tauri desktop app |
+| **v2.0** | `apc serve` (loopback + token, SSE) + `apc-desktop`, a Tauri window over it |
 | **v2.1** | Advanced sandboxing (Landlock/Seatbelt) or WASM plugins |
 
 ---

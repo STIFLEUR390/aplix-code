@@ -1,5 +1,8 @@
 [workspace]
 members = ["crates/*"]
+# The Tauri client needs GTK/WebKit; keeping it out of the workspace keeps `cargo test --workspace`
+# and the three-OS release free of desktop libraries (build recipe: AGENTS.md, Desktop (v2.0)).
+exclude = ["crates/apc-desktop"]
 resolver = "2"
 
 [workspace.package]
@@ -63,6 +66,7 @@ sentry = { version = "0.48", default-features = false, features = [
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 toml = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
 
 # SPEC.md §6: latency first, size from strip/lto/abort.
 [profile.release]

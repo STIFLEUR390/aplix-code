@@ -2,8 +2,8 @@
 
 **Version :** 1.1
 **Statut :** spécification du MVP
-**Périmètre :** le binaire en ligne de commande uniquement. L'application Tauri est anticipée par
-l'architecture mais **hors périmètre**.
+**Périmètre :** le binaire en ligne de commande, plus le serveur local et la fenêtre Tauri depuis
+v2.0 (§8.15). La fenêtre est un client de `apc serve`, hors du workspace et hors de la barre de 15 Mo.
 **Autorité :** ce document fait foi pour le MVP ; le `README.md` fait foi pour la vision produit et
 le post-MVP. En cas de conflit sur un détail d'implémentation, c'est ce fichier qui l'emporte — voir
 §8 pour les écarts assumés par rapport au README.
@@ -246,7 +246,8 @@ pub trait Plugin: Send + Sync {
 | Async | `tokio` | Runtime de `reqwest` et des commandes. |
 | Télémétrie (opt-in) | `sentry` + `tracing` + `tracing-subscriber` (feature `telemetry`, off par défaut) | Voir §3.4 et §8.9 ; `sentry` n'est compilé que si la feature est active, pour ne pas peser sur le budget de 15 Mo. |
 | TUI (V1.1) | `ratatui` + `crossterm` | Hors MVP. |
-| Serveur local (v2.0) | `axum` 0.7 | Voir §8.15 : même `Agent`, mémoire et guard que la CLI. |
+| Serveur local (v2.0) | `axum` 0.7 + `tower-http` (`cors`) | Voir §8.15 : même `Agent`, mémoire et guard que la CLI. |
+| Fenêtre de bureau (v2.0) | `tauri` 2.11, hors workspace | Voir §8.15 : client de `apc serve`, GTK/WebKit jamais dans le binaire `apc`. |
 
 Profil de release :
 
@@ -276,7 +277,7 @@ opt-level = 3      # voir §8.5 : la vitesse primait sur la taille
 | v1.2 | Plugins de recherche web (SearXNG) et d'extraction (Obscura) |
 | v1.2b | Décider si `rig` remplace nos adapters et notre boucle d'agent (voir §8.2) — **fait : non** |
 | v1.3 | Mémoire long terme (SQLite + FTS5 ou `sqlite-vec`) — **fait** : SQLite + FTS5, JSONL importé (§8.14) |
-| v2.0 | `apc serve` (serveur HTTP local) + application Tauri — **`apc serve` fait** (§8.15) ; le client Tauri reste à écrire, `tauri` 2.11 se construit sur cette machine |
+| v2.0 | `apc serve` (serveur HTTP local) + application Tauri — **fait** (§8.15) : serveur, fenêtre Tauri dans `crates/apc-desktop` |
 | v2.1 | Sandboxing avancé (`landlock`/`seatbelt`) ou plugins WASM |
 
 ---
@@ -588,20 +589,34 @@ PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
 cargo build
 ```
 
-**Le client reste à écrire, mais ce n'est plus une question de faisabilité** : une fenêtre, le flux
-SSE de `/v1/run` consommé côté webview, un bouton d'arrêt et le choix du provider. Il ira dans un
-crate séparé (`apc-desktop`) pour que GTK et WebKit n'entrent ni dans le graphe du binaire `apc` ni
-dans sa barre de 15 Mo.
+**Le client Tauri existe** (`crates/apc-desktop`) : une fenêtre, le flux SSE de `/v1/run` consommé
+côté webview, un bouton d'arrêt et le choix du provider. Il vit hors du workspace
+(`exclude = ["crates/apc-desktop"]` dans le `Cargo.toml` racine) : GTK et WebKit n'entrent donc ni
+dans le graphe du binaire `apc`, ni dans sa barre de 15 Mo, ni dans `cargo test --workspace`, ni dans
+la matrice de release à trois OS. Le crate n'a pas de `capabilities/` : `src/main.rs` ouvre la
+fenêtre et injecte le jeton par `initialization_script` (`window.APC_TOKEN`), donc la page n'a besoin
+d'aucun IPC et d'aucune commande Tauri. La page elle-même (`ui/index.html`) est du JavaScript sans
+bundler, pour ne pas ajouter de chaîne de build Node à un projet qui n'en a pas.
+
+**Deux ajouts que la fenêtre a imposés au serveur.** `GET /v1/providers` renvoie
+`apc_models::names()`, sinon la page devrait recopier la liste des providers — et cette copie
+divergerait au premier provider ajouté. `POST /v1/run` accepte `provider` et `model` par requête ;
+changer de provider **efface `base_url`**, qui appartenait au provider précédent (un test vérifie que
+la requête arrive bien sur `localhost:11434` après un passage à `ollama`). Enfin CORS passe en
+permissif (`tower-http`, feature `cors`) : la webview est une origine différente de
+`127.0.0.1:7717`, et c'est le jeton qui ferme la porte, pas l'origine.
 
 **Coût mesuré :** `axum` 0.7 ajoute `axum`, `axum-core`, `matchit`, `mime` et `serde_path_to_error`
-au graphe (5 paquets ; `hyper`, `tower`, `http-body` étaient déjà là pour `reqwest`), et le binaire
-release passe de 10 054 128 à **10 455 728** octets — toujours sous la barre des 15 Mo.
+au graphe (5 paquets ; `hyper`, `tower`, `http-body` étaient déjà là pour `reqwest`), `tower-http`
+ajoute le sien pour CORS, et le binaire release passe de 10 054 128 à **10 492 592** octets —
+toujours sous la barre des 15 Mo. Le binaire de bureau n'entre pas dans ce budget (il est hors
+workspace) et n'a pas été pesé.
 
 ---
 
 ## 9. Hors périmètre V1 (explicite)
 
-1. Application Tauri : `apc serve` existe et `tauri` 2.11 se lie ici (§8.15) ; la fenêtre elle-même reste à écrire.
+1. Application Tauri : fenêtre posée dans `crates/apc-desktop`, hors workspace (§8.15) ; il reste à en faire un paquet installable (`tauri bundle`), ce que ce dépôt ne fait pas.
 2. Recherche web (SearXNG) et extraction (Obscura, Firecrawl, Crawl4AI).
 3. Knowledge graph et distillation de la mémoire : la v1.3 livre SQLite + FTS5, rien de plus.
 4. Chargement dynamique de plugins (`.so`/`.dylib`/WASM) : les traits existent, les plugins V1 sont

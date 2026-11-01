@@ -131,6 +131,16 @@
   `libgtk-3-dev` and `libsoup-3.0-dev` are installed. Fix with
   `PATH=/usr/bin:/bin:$PATH PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig`,
   and check `which -a pkg-config ld` before ever suggesting `sudo apt install`.
+- **`crates/apc-desktop` is outside the workspace** (`exclude` in the root `Cargo.toml`): root `cargo
+  build`/`test`/`fmt`/`clippy` never touch it, and CI never installs GTK. Its own `Cargo.lock` is
+  expected — don't "fix" that by adding it to `members`.
+- The window has **no Tauri command and no `capabilities/`**: the token is injected by
+  `initialization_script`. Adding `invoke` means adding `withGlobalTauri` and an ACL entry, so prefer
+  the injected global.
+- CORS is permissive on the server because the webview is a cross-origin client. The Bearer token,
+  not the origin, is the gate — never drop the middleware while "simplifying" the router.
+- Changing provider in a run **drops `base_url`**: it belongs to the provider it was written for.
+  Keep that clear or a request to `ollama` heads to the old gateway and returns its HTML page.
 
 ## Telemetry / Sentry (dev phase)
 

@@ -43,9 +43,9 @@ for the README's version of a §8 decision, say why it was changed instead of si
 
 ## Hard rules
 
-- **v2.0's server is in place** (`apc serve`, SPEC §8.15); the Tauri client is not written yet but
-  builds here (see `gotchas.md`, the Homebrew `pkg-config`/`ld` trap) and belongs in its own
-  `apc-desktop` crate.
+- **v2.0 is in place**: `apc serve` (SPEC §8.15) and the Tauri window in `crates/apc-desktop`, which
+  sits **outside the workspace** so GTK/WebKit never reach CI or the 15 MB gate. Build it from its
+  own directory (see `commands.md`, and the Homebrew `pkg-config`/`ld` trap in `gotchas.md`).
 - **v1.0 is in place.** Cargo workspace at `crates/*` (9 crates, `resolver = "2"`, edition 2021,
   MSRV 1.80), every crate holds code: config, traits, HTTP adapters, SQLite + FTS5 sessions, heuristic guard
   + `open-jev` sidecar client, the resumable model store, file/shell tools, the agent loop, the tool

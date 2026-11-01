@@ -256,3 +256,39 @@ fn config_reports_the_effective_values() {
         response.body
     );
 }
+
+/// A run may pick its provider, and the old provider's base URL must not follow it.
+///
+/// `ollama`'s default is `http://localhost:11434/v1`, while the server was configured with the
+/// stub's URL: the error naming the ollama default *is* the proof that the override dropped it.
+#[test]
+fn a_run_can_pick_its_provider() {
+    let dir = sandbox("provider");
+    let server = serve(&dir, sse_server("unused"));
+
+    let providers = request(
+        server.port,
+        "GET",
+        "/v1/providers",
+        Some(&server.token()),
+        None,
+    );
+    assert_eq!(providers.status, 200);
+    assert!(providers.body.contains(r#""ollama""#), "{}", providers.body);
+    assert!(!providers.body.contains("gemini"), "{}", providers.body);
+
+    let prompt = r#"{"prompt":"salut","provider":"ollama","model":"llama3"}"#;
+    let response = request(
+        server.port,
+        "POST",
+        "/v1/run",
+        Some(&server.token()),
+        Some(prompt),
+    );
+    assert_eq!(response.status, 200, "{}", response.body);
+    assert!(
+        response.body.contains("localhost:11434"),
+        "the old base URL followed the new provider: {}",
+        response.body
+    );
+}

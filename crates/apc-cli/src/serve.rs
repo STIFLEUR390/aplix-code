@@ -25,6 +25,7 @@ use directories::ProjectDirs;
 use futures_util::stream::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tower_http::cors::CorsLayer;
 
 use apc_core::chat::{ChatEvent, Message, SessionId};
 use apc_core::config::Config;
@@ -48,6 +49,10 @@ struct RunRequest {
     prompt: String,
     /// Continue an existing session instead of starting one.
     session: Option<SessionId>,
+    /// Provider for this run only; the resolved config stays the default.
+    provider: Option<String>,
+    /// Model for this run only.
+    model: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -91,8 +96,11 @@ fn router(server: Arc<Server>, token: String) -> Router {
         .route("/v1/run", post(run))
         .route("/v1/sessions", get(sessions))
         .route("/v1/config", get(config))
+        .route("/v1/providers", get(providers))
         .route("/v1/confirm", post(confirm))
         .route_layer(middleware::from_fn_with_state(token, require_token))
+        // Any origin: a webview is cross-origin, and the Bearer token is the real gate.
+        .layer(CorsLayer::permissive())
         .with_state(server)
 }
 
@@ -115,6 +123,10 @@ async fn require_token(
 
 async fn config(State(server): State<Arc<Server>>) -> Json<Config> {
     Json(server.config.clone())
+}
+
+async fn providers() -> Json<&'static [&'static str]> {
+    Json(apc_models::names())
 }
 
 async fn sessions(State(server): State<Arc<Server>>) -> Result<Json<Vec<SessionInfo>>, StatusCode> {
@@ -156,6 +168,22 @@ async fn run(
     Sse::new(stream)
 }
 
+/// The config this run uses: the server's, with the client's provider/model on top.
+fn with_override(base: &Config, body: &RunRequest) -> Config {
+    let mut config = base.clone();
+    if let Some(provider) = &body.provider {
+        if provider != &config.provider.name {
+            // A base URL belongs to the provider it was written for.
+            config.provider.base_url = None;
+        }
+        config.provider.name = provider.clone();
+    }
+    if let Some(model) = &body.model {
+        config.provider.model = model.clone();
+    }
+    config
+}
+
 impl Server {
     fn lock_pending(&self) -> std::sync::MutexGuard<'_, HashMap<u64, mpsc::Sender<bool>>> {
         self.pending
@@ -170,6 +198,7 @@ impl Server {
         body: RunRequest,
         events: tokio::sync::mpsc::UnboundedSender<Event>,
     ) {
+        let run_config = with_override(&self.config, &body);
         let session = body.session.unwrap_or_else(|| self.store.new_session());
         let mut messages = match self.store.load(Some(&session)).await {
             Ok(messages) => messages,
@@ -194,7 +223,7 @@ impl Server {
             server: Arc::clone(&self),
             events: events.clone(),
         });
-        let agent = match super::agent(&self.config, approver) {
+        let agent = match super::agent(&run_config, approver) {
             Ok(agent) => agent,
             Err(error) => return report(&events, &error.to_string()),
         };

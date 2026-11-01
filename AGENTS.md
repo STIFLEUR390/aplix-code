@@ -2,8 +2,8 @@
 
 ## State of the repo (check before assuming anything)
 
-v2.0's server is done; the Tauri client is not written yet, but it builds here (see the v2.0 note).
-A Cargo workspace (`crates/*`, 9 crates) whose crates all hold code —
+v2.0 is done: `apc serve` plus the Tauri window in `crates/apc-desktop` (outside the workspace, so
+CI never needs GTK). A Cargo workspace (`crates/*`, 9 crates) whose crates all hold code —
 `apc-core` (config + chat types), `apc-traits` (every trait), `apc-models` (HTTP adapters, SSE),
 `apc-memory` (SQLite sessions with FTS5), `apc-decision` (heuristic guard + model store), `apc-tools`
 (file tools + guarded shell), `apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli`
@@ -113,14 +113,13 @@ Before starting one, read its acceptance criteria — they name the traps that b
   `sessions/*.jsonl` first. `rusqlite` **was** absent from this machine's cargo cache (a ~46 KB/s
   download, not the 3 KB/s of the rig spike), and 0.40 dropped `bundled` while 0.41 needs Rust 1.89
   — do not bump without checking both.
-- **v2.0** `apc serve` — **done** (SPEC §8.15): axum 0.7, loopback only, Bearer token in
-  `serve.token`, the guard answered over `POST /v1/confirm`. The Tauri client is **not written yet**
-  but nothing blocks it: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev` and `libsoup-3.0-dev` are installed.
-  `pkg-config` only said otherwise because Homebrew's `pkg-config` and `ld` shadow the system ones
-  and skip `/usr/lib/x86_64-linux-gnu/pkgconfig`. Build anything GTK/Tauri with both fixed (see
-  Commands); a spike containing only `tauri` 2.11 compiles and links in ~2m40 that way. Put the
-  client in its own crate (`apc-desktop`), never in `apc-cli`, so GTK/WebKit stay out of the 15 MB
-  binary.
+- **v2.0** `apc serve` + Tauri client — **done** (SPEC §8.15): axum 0.7, loopback only, Bearer token
+  in `serve.token`, the guard answered over `POST /v1/confirm`, `/v1/providers`, per-run provider
+  override, permissive CORS for the webview. The window lives in `crates/apc-desktop`, its own crate
+  outside the workspace, so GTK/WebKit stay out of the 15 MB binary and out of CI. System libraries
+  were never missing — Homebrew's `pkg-config` and `ld` shadow the system ones and skip
+  `/usr/lib/x86_64-linux-gnu/pkgconfig`; fix the two variables (see Commands) before believing
+  `atk.pc` or `gst_object_ref`.
 - **v2.1** sandboxing: `landlock`, `wasmtime` and `extism` are **not** cached either.
 
 Cache absence is not fatal — it costs a slow download (~3 KB/s here) — but it must be disclosed
@@ -222,9 +221,33 @@ still exists in `main::repl` and must keep working.
   synchronous, so this blocks a runtime thread — that is the `shortcut:` comment in the file.
 - `GET /v1/sessions` is `SqliteStore::sessions()` (`session`, `messages`), `GET /v1/config` is the
   resolved `Config` as JSON (`SessionId` gained `Serialize`/`Deserialize` for this).
+- `GET /v1/providers` lists `apc_models::names()`, so the client never hard-codes the list. `POST
+  /v1/run` also takes optional `provider` / `model`; switching provider **clears `base_url`**, which
+  belonged to the previous provider — the test asserts the request reaches `localhost:11434`.
+- **CORS is permissive** (`tower-http`, `cors`): the webview is a different origin from
+  `127.0.0.1:7717`, and the Bearer token is the real gate. Loopback binding is what keeps this safe.
 - `tests/serve.rs` re-declares its own helpers (separate binary, no dev-dependencies) and speaks
   HTTP/1.1 over `std::net::TcpStream`; the provider is the same one-shot `TcpListener` SSE stub.
   The server child is started with a sandboxed `XDG_DATA_HOME` and killed by `Drop`.
+
+## Desktop (v2.0)
+
+`crates/apc-desktop` is a Tauri 2 window over `apc serve`, and it is **excluded from the root
+workspace** (`Cargo.toml`: `exclude = [...]`) so GTK/WebKit never enter `cargo test --workspace`, the
+three-OS release, or the 15 MB gate. It has its own `Cargo.lock`; build it from its own directory.
+
+- The page (`ui/index.html`, vanilla JS, no bundler) is the whole client: provider select fed by
+  `GET /v1/providers`, model field, `/v1/run` stream read by hand over `ReadableStream`, a Stop
+  button (`AbortController` — the server keeps running), and the guard bar answering `/v1/confirm`.
+- `src/main.rs` only opens the window and injects the token: `initialization_script` sets
+  `window.APC_TOKEN`, so there is **no IPC, no `invoke`, no capabilities file**. Don't add one.
+- The token is read from the same `data_dir/serve.token` as the server; a missing token is not fatal,
+  the page says « no token found ».
+- **Build recipe** (this machine): Homebrew's `pkg-config`/`ld` shadow the system ones, so
+  `cargo build` fails on `atk` or on `gst_object_ref`/`ucsdet_*` symbols even though `libwebkit2gtk-4.1-dev`
+  is installed. Prefix with `PATH=/usr/bin:/bin:$PATH
+  PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig`. Neither error means a
+  missing package; check `which -a pkg-config ld` before reaching for sudo (SPEC §8.15).
 
 ## Config — the shipped feature
 
@@ -274,7 +297,7 @@ still exists in `main::repl` and must keep working.
     whenever a dependency is updated.
   - Measured at v1.3: the release binary without telemetry is 10 054 128 B, up ~1.9 MB from
     8 147 656 B — bundled SQLite is that cost, and it is the price of the no-system-dependency
-    promise. At v2.0 (axum) it is **10 455 728 B**, so ~5.2 MB below the gate.
+    promise. At v2.0 (axum + CORS + providers route) it is **10 492 592 B**, so ~5.2 MB below the gate.
 - **CI is the contract** (`.github/workflows/ci.yml`): `fmt`, `clippy -D warnings` and `test` in
   **three feature shapes** — default, `--features open-jev`, `--features telemetry` — plus a
   release build on Linux/macOS/Windows with a 15 MB size gate (`wc -c` < 15728640, `apc.exe` on
@@ -314,7 +337,8 @@ cargo fmt --check
 cargo build --no-default-features        # compiles the Sentry feature out
 ```
 
-Anything that pulls GTK/WebKit (the future `apc-desktop`) needs the system `pkg-config` and `ld`
+`crates/apc-desktop` (Tauri, outside the workspace: `cd crates/apc-desktop && cargo build`) needs the
+system `pkg-config` and `ld`
 ahead of Homebrew's, or it fails on `atk.pc` and then on `gst_object_ref`/`ucsdet_*` at link time —
 neither of which is a missing package:
 

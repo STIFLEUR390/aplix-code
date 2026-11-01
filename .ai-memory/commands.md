@@ -146,6 +146,18 @@ cargo test -p apc-cli --test serve                     # token, SSE run, session
 `serve.token` is 64 hex chars, `0600`; delete it to force a rotation. No header = 401, and there is no
 flag to listen anywhere but `127.0.0.1`.
 
+## Desktop (v2.0)
+
+```bash
+cd crates/apc-desktop && PATH=/usr/bin:/bin:$PATH \
+  PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
+  cargo build --offline                       # ~4 min cold; the window needs a server running
+cargo fmt --check                              # the root command skips it: excluded from the workspace
+```
+
+Run `apc serve` first: the window reads `data_dir/serve.token` and defaults to `127.0.0.1:7717`. The
+server field in the header accepts another `host:port` and persists it in `localStorage`.
+
 ## Telemetry (Sentry)
 
 ```bash

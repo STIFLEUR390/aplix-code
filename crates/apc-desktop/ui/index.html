@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Aplix Code</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
+    background: #14161a; color: #e6e8ec;
+  }
+  header, footer { padding: .6rem .8rem; border-color: #262a31; }
+  header {
+    display: flex; gap: .5rem; align-items: center;
+    border-bottom: 1px solid #262a31; flex-wrap: wrap;
+  }
+  header label { color: #8b93a1; font-size: 12px; }
+  select, input, textarea, button {
+    font: inherit; color: inherit; background: #1c1f25;
+    border: 1px solid #2f343d; border-radius: 6px; padding: .35rem .5rem;
+  }
+  button { cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  #status { margin-left: auto; color: #8b93a1; font-size: 12px; }
+  #status.error { color: #f87171; }
+  main { flex: 1; overflow-y: auto; padding: .8rem; display: flex; flex-direction: column; gap: .6rem; }
+  .turn { border-radius: 8px; padding: .5rem .7rem; white-space: pre-wrap; word-break: break-word; }
+  .turn.user { background: #1e2a3d; align-self: flex-end; max-width: 80%; }
+  .turn.assistant { background: #1a1d23; border: 1px solid #262a31; }
+  .turn.error { background: #2b1a1a; border: 1px solid #5b2626; color: #f3b0b0; }
+  .turn .who { display: block; font-size: 11px; color: #8b93a1; margin-bottom: .2rem; }
+  #ask { margin: 0 .8rem .5rem; padding: .6rem .7rem; border: 1px solid #6b4b16;
+         background: #2a2216; border-radius: 8px; display: flex; gap: .6rem; align-items: center; }
+  #ask[hidden] { display: none; }
+  #ask p { margin: 0; flex: 1; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; }
+  footer { border-top: 1px solid #262a31; display: flex; gap: .5rem; align-items: flex-end; }
+  footer textarea { flex: 1; resize: none; min-height: 3.2rem; }
+</style>
+</head>
+<body>
+<header>
+  <label for="provider">provider</label>
+  <select id="provider"><option value="">(config)</option></select>
+  <label for="model">model</label>
+  <input id="model" size="14" placeholder="(config)">
+  <label for="endpoint">server</label>
+  <input id="endpoint" size="16" value="127.0.0.1:7717">
+  <span id="status">idle</span>
+</header>
+
+<main id="log"></main>
+
+<div id="ask" hidden>
+  <p id="ask-text"></p>
+  <button id="allow" class="primary">Run it</button>
+  <button id="deny">Refuse</button>
+</div>
+
+<footer>
+  <textarea id="prompt" rows="3" placeholder="Ask something. Enter sends, Shift+Enter adds a line."></textarea>
+  <button id="send" class="primary">Send</button>
+  <button id="stop" disabled>Stop</button>
+</footer>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const log = $("log");
+let session = null;      // the session id the server reported, so follow-ups continue it
+let controller = null;   // the in-flight request, so Stop can abort it
+
+$("endpoint").value = localStorage.getItem("apc.endpoint") || $("endpoint").value;
+$("endpoint").addEventListener("change", () => localStorage.setItem("apc.endpoint", $("endpoint").value));
+
+function base() { return "http://" + $("endpoint").value.trim().replace(/\/+$/, ""); }
+function headers(extra) {
+  return Object.assign({
+    "content-type": "application/json",
+    authorization: "Bearer " + (window.APC_TOKEN || ""),
+  }, extra || {});
+}
+function setStatus(text, isError) {
+  $("status").textContent = text;
+  $("status").classList.toggle("error", Boolean(isError));
+}
+function addTurn(kind, text, who) {
+  const turn = document.createElement("div");
+  turn.className = "turn " + kind;
+  if (who) {
+    const label = document.createElement("span");
+    label.className = "who";
+    label.textContent = who;
+    turn.append(label);
+  }
+  turn.append(document.createTextNode(text));
+  log.append(turn);
+  log.scrollTop = log.scrollHeight;
+  return turn;
+}
+function append(turn, text) {
+  turn.append(document.createTextNode(text));
+  log.scrollTop = log.scrollHeight;
+}
+
+// The provider list comes from the binary that has to honour it: no hard-coded copy here.
+fetch(base() + "/v1/providers", { headers: headers() })
+  .then((response) => (response.ok ? response.json() : Promise.reject(new Error("HTTP " + response.status))))
+  .then((names) => {
+    for (const name of names) {
+      const option = document.createElement("option");
+      option.value = option.textContent = name;
+      $("provider").append(option);
+    }
+  })
+  .catch((error) => setStatus("no server: " + error.message, true));
+
+async function send() {
+  const prompt = $("prompt").value.trim();
+  if (!prompt) return;
+
+  $("prompt").value = "";
+  $("send").disabled = true;
+  $("stop").disabled = false;
+  setStatus("streaming…");
+  addTurn("user", prompt, "you");
+  let answer = addTurn("assistant", "", "apc");
+
+  controller = new AbortController();
+  const body = { prompt };
+  if (session) body.session = session;
+  if ($("provider").value) body.provider = $("provider").value;
+  if ($("model").value.trim()) body.model = $("model").value.trim();
+
+  try {
+    const response = await fetch(base() + "/v1/run", {
+      method: "POST", headers: headers(), body: JSON.stringify(body), signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error("HTTP " + response.status + (response.status === 401 ? " (token refused)" : ""));
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let edge;
+      while ((edge = buffer.indexOf("\n\n")) >= 0) {
+        handle(buffer.slice(0, edge), answer);
+        buffer = buffer.slice(edge + 2);
+      }
+    }
+  } catch (error) {
+    if (error.name === "AbortError") {
+      setStatus("stopped");
+    } else {
+      setStatus(error.message, true);
+      addTurn("error", error.message, "error");
+    }
+  } finally {
+    controller = null;
+    $("send").disabled = false;
+    $("stop").disabled = true;
+    if ($("status").textContent === "streaming…") setStatus("idle");
+  }
+}
+
+function handle(chunk, answer) {
+  for (const line of chunk.split("\n")) {
+    if (!line.startsWith("data:")) continue;
+    let event;
+    try {
+      event = JSON.parse(line.slice(5).trim());
+    } catch {
+      continue;   // a keep-alive or a comment
+    }
+    if (event.delta) append(answer, event.delta);
+    else if (event.session) session = event.session;
+    else if (event.error) addTurn("error", event.error, "error");
+    else if (event.ask) ask(event.ask);
+  }
+}
+
+// The guard runs on the server; this is the answer it is waiting for.
+function ask(question) {
+  $("ask-text").textContent = question.command + "  (" + Math.round(question.risk * 100) + "% destructive)";
+  $("ask").hidden = false;
+  $("allow").onclick = () => answer(+question.id, true);
+  $("deny").onclick = () => answer(+question.id, false);
+}
+
+async function answer(id, allow) {
+  $("ask").hidden = true;
+  try {
+    await fetch(base() + "/v1/confirm", {
+      method: "POST", headers: headers(), body: JSON.stringify({ id, allow }),
+    });
+  } catch (error) {
+    setStatus("confirm failed: " + error.message, true);
+  }
+}
+
+$("send").addEventListener("click", send);
+$("stop").addEventListener("click", () => controller && controller.abort());
+$("prompt").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    send();
+  }
+});
+if (!window.APC_TOKEN) setStatus("no token found: run `apc serve` first", true);
+</script>
+</body>
+</html>
