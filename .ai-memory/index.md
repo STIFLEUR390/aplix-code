@@ -12,8 +12,9 @@ Repo: `git@github.com:STIFLEUR390/aplix-code.git`, branch `main`.
 Three principles that constrain every design decision:
 
 1. **Local-first micro-decisions** — "is this command dangerous / what does the user want / is this
-   context relevant" answered by a local model (`open-jev`, quantized DeBERTa-v3) in <20 ms, free,
-   offline. The cloud LLM is only called for actual generation.
+   context relevant" answered locally in <20 ms, free, offline. Shipped answer today is the built-in
+   heuristic guard; `open-jev` (quantized DeBERTa-v3 over a local sidecar) is the target, behind
+   `--features open-jev`, with the heuristics kept as the permanent fallback.
 2. **Everything is a plugin** — model adapter, tools, memory backend, decision engine each behind a
    trait in `apc-traits`.
 3. **Lite by design** — CLI binary < 15 MB; models downloaded on demand (resumable + SHA-256

@@ -14,17 +14,17 @@
 
 ---
 
-> **⚠️ Early-stage project.** `aplix code` is currently under active development. The architecture, traits, and CLI interface are still being stabilized. Expect breaking changes until `v1.0.0`. Star ⭐ the repo to follow the journey.
+> **⚠️ Early-stage project.** The MVP feature set is in place and installs from source or a release build, but the crate is still versioned `0.1.0` and nothing is published yet. Expect breaking changes until the `v1.0.0` tag is cut. Star ⭐ the repo to follow the journey.
 
 ---
 
 ## 🎯 What is aplix code?
 
-`aplix code` (or **`apc`** for short) is a **coding agent that runs in your terminal**. It talks to your favorite LLM (OpenAI, Anthropic, Gemini, Ollama, DeepSeek, OpenRouter, …), reads and writes files, runs shell commands, and helps you get real work done.
+`aplix code` (or **`apc`** for short) is a **coding agent that runs in your terminal**. It talks to your favorite LLM (OpenAI, Anthropic, Ollama, DeepSeek, OpenRouter, Groq, or any OpenAI-compatible gateway), reads and writes files, runs shell commands, and helps you get real work done.
 
 But unlike the existing tools, `apc` was built around three core principles:
 
-1. **Local-first by default.** Micro-decisions (is this command dangerous? what does the user want? is this context relevant?) are made **locally**, in under 20 ms, with a small neural decision model — no API call, no latency, no cloud, no cost.
+1. **Local-first by default.** Micro-decisions (is this command dangerous? what does the user want? is this context relevant?) are made **locally**, in under 20 ms, with no API call, no latency, no cloud, no cost. Today that is a built-in heuristic; a small neural decision model is the target.
 2. **Everything is a plugin.** Every layer of the agent — the model adapter, the tools, the memory backend, the decision engine — is defined by a trait and can be swapped. You are never locked in.
 3. **Lite by design.** The CLI binary stays **under 15 MB**. Models are downloaded on demand, with resumable, checksum-verified downloads. No 500 MB bundle on `cargo install`.
 
@@ -56,14 +56,16 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ### ✅ Working today (`v1.0`)
 
-- **`apc run "<prompt>"`** — One-shot agent mode.
+- **`apc run "<prompt>"`** — One-shot agent mode: streams the answer, calls tools, guards shell.
 - **`apc chat`** — Interactive REPL in the terminal.
 - **`apc init`** — Generate a commented `apc.toml` config file.
 - **`apc config`** — Print the effective configuration and which layer supplied each key.
 - **Built-in tools**: `read_file`, `write_file`, `list_dir`, `run_shell`.
 - **Local Permission Guard** — Every shell command is scored before it runs (`rm -rf`, `DROP TABLE`, `mkfs`…), and anything above the threshold needs an explicit confirmation. The built-in heuristics need no model at all; building with `--features open-jev` lets a local-jev sidecar answer first and falls back to them on any failure.
 - **Multi-provider support** over the two dialects in use (`/chat/completions` compatible OpenAI, `/messages` Anthropic): OpenAI, Anthropic, Ollama, DeepSeek, OpenRouter, Groq, and any compatible local gateway.
-- **Session persistence** — Resume a conversation with `apc chat --continue`.
+- **Session persistence** — Resume a conversation with `apc chat --continue`; sessions are JSONL under
+  `${XDG_DATA_HOME:-~/.local/share}/aplix/sessions/`.
+- **Local logs** — `APC_LOG=debug|info|warn|error` on stderr, no network, no DSN needed.
 - **Opt-in error reporting** — Sentry-compatible, compiled out by default (`--features telemetry` to build it in), off without a DSN and a config flag.
 - **`apc model <cmd>`** — Manage local decision models (`list`, `download`, `status`, `verify`, `remove`), with resumable, SHA-256 verified downloads. The catalog is empty for now: no upstream artifact exists (`SPEC.md` §8.12).
 - **CI and releases** — `fmt`, `clippy -D warnings` and tests in three feature shapes on every push, a 15 MB size gate, and tagged builds for Linux, macOS and Windows.
@@ -132,7 +134,7 @@ aplix-code/
 │   ├── apc-memory/     # Session history (JSONL); long-term memory lands in v1.3.
 │   ├── apc-plugins/    # Static plugin registry (dynamic loading lands in v1.2).
 │   └── apc-cli/        # The `apc` binary.
-└── skills/             # Markdown-based skill definitions.
+└── .ai-memory/         # Notes for coding agents (start at `index.md`).
 ```
 
 **Key traits** (simplified — `SPEC.md` §4 is authoritative, including the streaming return type):
@@ -156,6 +158,16 @@ pub trait Tool: Send + Sync {
     async fn execute(&self, args: serde_json::Value) -> Result<String>;
 }
 
+#[async_trait]
+pub trait MemoryStore: Send + Sync {
+    async fn append(&self, session: &SessionId, message: &Message) -> Result<()>;
+    async fn load(&self, session: Option<&SessionId>) -> Result<Vec<Message>>;
+}
+
+pub trait Approver: Send + Sync {
+    fn confirm(&self, command: &str, risk: f64) -> Result<bool>;  // the Permission Guard's terminal prompt
+}
+
 pub trait Plugin: Send + Sync {
     fn name(&self) -> &'static str;
     fn init(&self, ctx: &mut PluginContext) -> Result<()>;
@@ -169,7 +181,10 @@ pub trait Plugin: Send + Sync {
 - **No `unsafe`** at all: `#![forbid(unsafe_code)]` in every crate.
 - **Local Permission Guard** on every shell command, with configurable threshold.
 - **No telemetry, no analytics, no phone-home**. The only exception is opt-in Sentry error
-  reporting: off by default, no DSN shipped, no user content — see `SPEC.md` §3.4 and §8.9.
+  reporting: compiled out unless the build enables `--features telemetry`, and still inert without
+  both `telemetry = true` in the config and a DSN in the environment. Only `warn!`/`error!` events
+  and captured command errors leave the process — no file contents, no prompts, no completions
+  (tracing fields such as a failing path do travel; keep them out of `warn!`) — `SPEC.md` §3.4, §8.9.
 - **Checksum-verified downloads** for every model.
 - **Explicit, layered configuration** (defaults < user < project < local < env < flags).
 
@@ -186,8 +201,17 @@ cargo build --release
 
 Requirements: Rust 1.80+, a modern OS. No system dependencies: TLS is `rustls`, there is no OpenSSL.
 
-While building offline is what this machine needs, `cargo build --offline` is the safe form; the
-`open-jev` decision backend is a separate opt-in feature (`--features open-jev`), see `SPEC.md` §8.11.
+Two opt-in features, both off by default:
+
+| Feature | Effect |
+| :--- | :--- |
+| `open-jev` | Asks a local-jev sidecar (`decision.endpoint`) before the heuristics; falls back on any failure (`SPEC.md` §8.11). |
+| `telemetry` | Compiles in Sentry reporting; still requires the config flag and a DSN (`SPEC.md` §3.4). |
+
+```bash
+cargo build --release --features open-jev,telemetry
+cargo test --workspace                        # fmt + clippy -D warnings are part of CI (`.github/workflows/ci.yml`)
+```
 
 ---
 
@@ -202,7 +226,7 @@ While building offline is what this machine needs, `cargo build --offline` is th
 | **v0.3b** | `open-jev` backend behind a feature flag, fail-open to the heuristics |
 | **v0.4** | `apc model` subcommand + resumable, verified downloads |
 | **v0.5** | Opt-in telemetry: local `tracing` logs + Sentry, off by default |
-| **v1.0** | MVP: stable CLI, docs, CI and release artifacts for Linux/macOS/Windows |
+| **v1.0** | MVP: CLI, docs, CI matrix and cross-platform release builds |
 | **v1.1** | `ratatui`-based TUI, intent classification, `skills/` |
 | **v1.2** | SearXNG + Obscura plugins |
 | **v1.3** | Long-term memory (SQLite + FTS5 / `sqlite-vec`) |
@@ -216,8 +240,9 @@ While building offline is what this machine needs, `cargo build --offline` is th
 `apc` is at the very start of its life, which means **there's never been a better time to shape it**.
 
 - **Discussions & ideas**: open an issue with the `idea` label.
-- **Bug reports**: please use the template in `.github/ISSUE_TEMPLATE/`.
-- **Pull requests**: read `CONTRIBUTING.md` first (coming soon).
+- **Bug reports**: open an issue with what you ran, what you expected, and the `APC_LOG=debug` output.
+- **Pull requests**: keep `cargo fmt`, `cargo clippy -D warnings` and `cargo test --workspace` green
+  in all three feature shapes CI builds; there is no `CONTRIBUTING.md` yet.
 - **Design principles**: any PR must respect the traits in `apc-traits` and the "everything is a plugin" philosophy.
 
 If you want to help but don't know where to start, look for issues tagged [`good first issue`](https://github.com/STIFLEUR390/aplix-code/labels/good%20first%20issue).

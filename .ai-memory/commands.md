@@ -32,7 +32,7 @@ cargo fmt --all --check
 cargo clippy --offline --all-targets -- -D warnings
 cargo test --offline --workspace
 cargo test --offline -p apc-decision --features open-jev   # the open-jev build is a separate path
-cargo build --offline --no-default-features               # telemetry off
+cargo build --offline --no-default-features               # the shipped shape (no Sentry)
 ```
 
 

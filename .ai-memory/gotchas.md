@@ -2,10 +2,10 @@
 
 ## Repository reality vs docs
 
-- `README.md` (vision) and `SPEC.md` (MVP) describe the **target**. v0.4 code exists (workspace,
-  config, `apc init`/`config`, `apc run`/`chat`, JSONL sessions, tools + guard, `open-jev` client,
-  model store, Sentry telemetry). Still absent: CI, `skills/`, hooks, `CONTRIBUTING.md`,
-  `.github/ISSUE_TEMPLATE/`.
+- `README.md` (vision) and `SPEC.md` (MVP) describe the **target**. v1.0 code exists (workspace,
+  config, `apc init`/`config`/`run`/`chat`/`model`, JSONL sessions, tools + guard, `open-jev` client,
+  model store, opt-in Sentry, CI + release workflows). Still absent: `skills/`, hooks,
+  `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/`, the `v1.0.0` tag (crate version is `0.1.0`).
 - Coding tasks name a crate that may still be a placeholder — check its `src/lib.rs` before assuming
   a module exists.
 
@@ -95,6 +95,9 @@
   explicitly captured errors leave a release binary.
 - Never call `sentry::init(())` — the no-argument form reads ambient `SENTRY_DSN` and arms telemetry
   behind the config gate's back. `sentry::init((dsn, options))` keeps the gate explicit.
+- `warn!` becomes a Sentry **event** (level `warning`), not a breadcrumb — `crates/apc-agent/src/lib.rs:73`
+  (`tool failed`) shipped with its `error` field, which contains an absolute path. Anything put in a
+  `warn!` field leaves the machine.
 - To test the Sentry path you must now build with `--features telemetry`; a plain
   `cargo build` produces a binary with no Sentry at all (verified: no crate in the graph, no DSN
   string, no connection even with `SENTRY_DSN` + `APC_TELEMETRY=1` set).

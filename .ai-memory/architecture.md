@@ -140,8 +140,9 @@ Still to come: hooks (`PreToolUse`, `PostToolUse`, `Stop`) and context compactio
 
 `apc-core::config`:
 
-- `Config { provider { name, model }, decision { threshold }, telemetry }`, `Serialize`/`Deserialize`
-  with `#[serde(default, deny_unknown_fields)]`.
+- `Config { provider { name, model, base_url }, decision { threshold, endpoint }, telemetry }`,
+  `Serialize`/`Deserialize` with `#[serde(default, deny_unknown_fields)]`; both `Option` fields are
+  `skip_serializing_if = "Option::is_none"`, so defaults never invent a key.
 - `Layer { source, table }` + `Source { Defaults, User, Project, Local, Env, Flag }` (declaration
   order *is* the precedence order). Defaults are themselves a `Layer`, so provenance has no special
   case.
@@ -190,10 +191,11 @@ via clap `Args`. No precedence logic there.
 ## Telemetry (Sentry)
 
 Implemented in `crates/apc-cli/src/telemetry.rs` (the whole crate is the composition root, per SPEC
-§3.4). `init(enabled) -> Guard` returns the `ClientInitGuard`, held for the life of `main` so queued
-events flush on drop; `capture(&anyhow::Error)` reports a command failure before it is printed.
+§3.4). `init_with(enabled, dsn) -> Guard` installs the `tracing` subscriber and returns the
+`ClientInitGuard`, held for the life of `main` so queued events flush on drop; `capture(&anyhow::Error)`
+reports a command failure before it is printed.
 
-Gates, in order: `telemetry` feature compiled (currently a **default** feature during development) →
+Gates, in order: `telemetry` feature compiled (**opt-in since v1.0**, `default = []`) →
 `telemetry = true` in the resolved config → a DSN in `APC_SENTRY_DSN`/`SENTRY_DSN`. `main` decides
 *before* running the command so that a config that fails to load is itself reportable; `apc init` has
 no config yet, so it falls back to the env variable alone.
