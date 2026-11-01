@@ -82,16 +82,30 @@ apc model remove open-jev
 
 Model cache and sessions live under `${XDG_DATA_HOME:-~/.local/share}/aplix/`.
 
-## Telemetry (opt-in, off by default)
+## Telemetry (Sentry)
 
 ```bash
-APC_SENTRY_DSN=https://key@host/1 APC_TELEMETRY=1 cargo run -p apc-cli -- run "..."  # reports errors
-APC_TELEMETRY=0 ...                                          # force off, beats any DSN
-cargo build --release --no-default-features                  # compiles the `telemetry` feature out
+cargo run -p apc-cli -- config                       # .env is auto-loaded in debug builds
+APC_TELEMETRY=1 APC_SENTRY_DSN=http://key@host/1 target/debug/apc config
+APC_TELEMETRY=0 target/debug/apc config              # force off, beats any DSN
+cargo build --no-default-features                    # compiles the `telemetry` feature out
 ```
 
-No DSN ⇒ `ClientOptions::new()` keeps `dsn = None` ⇒ disabled client, zero network. Logs stay local
-either way (`tracing` fmt layer).
+Current state (dev phase): `telemetry` is a **default** feature of `apc-cli`, `.env` (git-ignored)
+sets `APC_TELEMETRY=1` + `http://…@localhost:8789/5`, and debug builds read `.env` from the current
+directory through the 15-line `load_dotenv` in `main.rs` (release builds never call it). Runtime
+still needs **both** gates: `telemetry = true` in the resolved config and a DSN in the environment.
+
+Verify delivery without reading the relay: point the DSN at a one-shot listener and force an error
+(broken `apc.toml` is enough).
+
+```bash
+python3 -c "import socket;s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);s.bind(('127.0.0.1',8799));s.listen(1);c,_=s.accept();open('/tmp/post.txt','wb').write(c.recv(65535))" &
+APC_TELEMETRY=1 APC_SENTRY_DSN=http://pub@127.0.0.1:8799/1 ./target/debug/apc config  # in a dir with a broken apc.toml
+```
+
+A `POST /api/1/envelope/` with an `event` payload means wiring works. No DSN ⇒ `ClientOptions::new()`
+keeps `dsn = None` ⇒ disabled client, zero network.
 
 ## Docs lookup (this machine)
 

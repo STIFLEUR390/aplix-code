@@ -12,9 +12,15 @@ authors.workspace = true
 name = "apc"
 path = "src/main.rs"
 
+[features]
+# Dev phase: Sentry is compiled in. The v1.0 release task flips this to `[]`.
+default = ["telemetry"]
+telemetry = ["dep:sentry"]
+
 [dependencies]
 apc-core.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 directories.workspace = true
+sentry = { workspace = true, optional = true }
 toml.workspace = true

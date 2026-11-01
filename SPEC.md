@@ -131,7 +131,14 @@ première compilation, et elle reste le filet de sécurité en production.
 - **Désactivation** : `APC_TELEMETRY=0` l'emporte sur tout (même un DSN présent) ; sinon absence de
   DSN ; sinon feature `telemetry` non compilée (`--no-default-features`).
 - **Contenu envoyé** : erreurs, panics, et breadcrumbs `tracing` de niveau `warn`/`error` uniquement
-  par défaut. Jamais le contenu des fichiers, des prompts ni des réponses du modèle.
+  par défaut. Jamais le contenu des fichiers, des prompts ni des réponses du modèle. Le suivi de
+  session (`release-health`) est désactivé : ce sont des métriques d'usage.
+- **Phase de développement** : la feature `telemetry` est une feature **par défaut** et le `.env`
+  local (non commité) arme `APC_TELEMETRY=1` avec un DSN local. La tâche de release v1.0 la retire
+  de `default`, remplace le DSN et vérifie qu'aucun DSN n'est livré dans le binaire.
+- **Limite connue** : `panic = "abort"` (profil release) supprime le déroulement de pile, donc le
+  hook de panic Sentry ne peut rien envoyer en release ; seules les erreurs capturées explicitement
+  partent. En debug (unwind) les panics sont remontées.
 - **Câblage** : le subscriber `tracing` (logs locaux, toujours actifs) et le layer Sentry sont montés
   dans la racine de composition `apc-cli`. Aucune crate de bibliothèque n'initialise de client.
 

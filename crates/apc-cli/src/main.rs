@@ -2,12 +2,15 @@
 //! The `apc` binary: composition root for every layer.
 
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use directories::ProjectDirs;
 
-use apc_core::config::{self, Layer, Source};
+use apc_core::config::{self, Layer, Loaded, Source};
+
+mod telemetry;
 
 /// `apc --version` prints the CLI version and the decision model (SPEC.md §2.1).
 const VERSION: &str = concat!(
@@ -64,10 +67,60 @@ struct ConfigArgs {
     permission_threshold: Option<f64>,
 }
 
-fn main() -> Result<()> {
-    match Cli::parse().command {
+fn main() -> ExitCode {
+    #[cfg(debug_assertions)]
+    load_dotenv(); // dev only: a release build never reads a stray .env
+
+    let cli = Cli::parse();
+    let _sentry = telemetry::init(telemetry_enabled(&cli));
+
+    match run(cli) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            telemetry::capture(&error);
+            eprintln!("error: {error:?}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Dev convenience: read `.env` (`KEY=VALUE`, `#` comments) so debug runs pick up the local DSN
+/// and key. Existing variables win.
+#[cfg(debug_assertions)]
+fn load_dotenv() {
+    let Ok(text) = std::fs::read_to_string(".env") else {
+        return;
+    };
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if std::env::var_os(key.trim()).is_none() {
+            // No quote stripping: the shipped .env has no quoted values.
+            std::env::set_var(key.trim(), value.trim());
+        }
+    }
+}
+
+fn run(cli: Cli) -> Result<()> {
+    match cli.command {
         Command::Init(args) => init(&args),
         Command::Config(args) => show_config(&args),
+    }
+}
+
+/// Telemetry needs the config flag, and `apc init` is about to write that very config.
+fn telemetry_enabled(cli: &Cli) -> bool {
+    match &cli.command {
+        Command::Init(_) => telemetry::wants_from_env(),
+        Command::Config(args) => resolve(args).map_or_else(
+            |_| telemetry::wants_from_env(),
+            |(loaded, _)| loaded.config.telemetry,
+        ),
     }
 }
 
@@ -84,7 +137,11 @@ fn init(args: &InitArgs) -> Result<()> {
     Ok(())
 }
 
-fn show_config(args: &ConfigArgs) -> Result<()> {
+/// The files consulted and whether each one was loaded.
+type Checked = Vec<(Source, String, &'static str)>;
+
+/// Resolve the layers, plus the list of files consulted and whether each was loaded.
+fn resolve(args: &ConfigArgs) -> Result<(Loaded, Checked)> {
     let cwd = current_dir()?;
     let user =
         ProjectDirs::from("dev", "aplix", "aplix").map(|dirs| dirs.config_dir().join("apc.toml"));
@@ -119,7 +176,11 @@ fn show_config(args: &ConfigArgs) -> Result<()> {
     if let Some(flags) = flags(args)? {
         layers.push(flags);
     }
-    let loaded = config::resolve(&layers)?;
+    Ok((config::resolve(&layers)?, checked))
+}
+
+fn show_config(args: &ConfigArgs) -> Result<()> {
+    let (loaded, checked) = resolve(args)?;
 
     let rows = [
         ("provider.name", loaded.config.provider.name.clone()),

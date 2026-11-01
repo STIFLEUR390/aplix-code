@@ -44,8 +44,9 @@ kaneo MCP, fixed IDs:
 - workspace `GAiYlKA3Nr2yEh3Ea40IY0f0tvK4rjQ0`
 - project `f0yyfbfaoe4610r2d2hc8qir`
 
-Nine tasks exist (all `to-do`, assigned to DEV MASTER, chained by `blocks` relations). Update
-status/tickets through these IDs instead of creating duplicates:
+Nine planned tasks exist (assigned to DEV MASTER, chained by `blocks` relations), plus the release
+cleanup task added after telemetry was switched on for development. Update status/tickets through
+these IDs instead of creating duplicates:
 
 | # | Title | Due | Priority | taskId |
 | :-: | :--- | :--- | :--- | :--- |
@@ -58,8 +59,13 @@ status/tickets through these IDs instead of creating duplicates:
 | 7 | v0.5 telemetry opt-in | 2027-01-24 | medium | `fs09rasodfc7bm4t1rf03kqu` |
 | 8 | v1.0 MVP release | 2027-02-01 | high | `i8hdfhjqxqjqh70o4zrqz239` |
 | 9 | v1.1 TUI/intent/skills | 2027-03-01 | low | `b2jrvx1yailriivbasw1k8uv` |
+| 10 | v1.0 production DSN + telemetry off | 2027-02-01 | high | `ykajrzj02vow3xnfvd9s1rv1` |
 
 Labels: `mvp`, `security`, `telemetry`, `release`, `post-mvp`.
+
+Task 10 (created 2026-11-01, `blocks` task 8) exists because the dev phase compiles Sentry in by
+default and arms it from the local `.env`: before shipping, the DSN moves to production and
+`default = []` removes the crate again.
 
 v0.1 (`jj90o5xa0x4igxpd7rfjeal4`) is implemented and sits in **In Review** — move it to Done once
 the owner has looked at the diff.

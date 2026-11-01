@@ -114,14 +114,24 @@ Through `genai`: OpenAI, Anthropic, Gemini, Ollama, DeepSeek, OpenRouter, Groq. 
 JSONL under `${XDG_DATA_HOME:-~/.local/share}/aplix/sessions/`, one file per session. `apc chat
 --continue` reloads the latest. No long-term memory in V1 (v1.3).
 
-## Telemetry (opt-in, off by default)
+## Telemetry (Sentry)
 
-Local logs are always on: `tracing` + `tracing-subscriber` (fmt layer), mounted in `apc-cli`.
-Sentry is a second, **optional** layer on the same registry, compiled behind the `telemetry`
-feature and inert without a DSN (`ClientOptions::new()` → `dsn = None` → disabled client).
+Implemented in `crates/apc-cli/src/telemetry.rs` (the whole crate is the composition root, per SPEC
+§3.4). `init(enabled) -> Guard` returns the `ClientInitGuard`, held for the life of `main` so queued
+events flush on drop; `capture(&anyhow::Error)` reports a command failure before it is printed.
 
-Rules: no DSN shipped, `APC_TELEMETRY=0` beats any DSN, `warn`/`error` breadcrumbs only, and never
-file/prompt/completion content. Libraries do not initialise a client; only `apc-cli` does.
+Gates, in order: `telemetry` feature compiled (currently a **default** feature during development) →
+`telemetry = true` in the resolved config → a DSN in `APC_SENTRY_DSN`/`SENTRY_DSN`. `main` decides
+*before* running the command so that a config that fails to load is itself reportable; `apc init` has
+no config yet, so it falls back to the env variable alone.
+
+Not implemented yet: the `tracing` fmt layer (arrives with the first real logs in v0.2) and
+`warn`/`error` breadcrumbs. Today Sentry receives explicit errors and, in debug builds, panics
+(`panic = "abort"` disables the panic hook in release).
+
+Rules: no DSN shipped, `APC_TELEMETRY=0` beats any DSN, no usage metrics
+(`auto_session_tracking: false`), never file/prompt/completion content. Libraries do not initialise a
+client; only `apc-cli` does.
 
 ## Post-MVP (do not build during an MVP task)
 

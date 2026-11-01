@@ -23,6 +23,41 @@
 - Empty `APC_*` values are ignored (treated as unset). `APC_TELEMETRY` accepts
   `1/0/true/false/yes/no/on/off`, not just TOML booleans.
 
+## Telemetry / Sentry (v0.1 dev phase)
+
+- Two independent gates, both required: `telemetry = true` in the resolved config **and** a DSN in
+  `APC_SENTRY_DSN`/`SENTRY_DSN`. Losing either silently disables everything; check `apc config`
+  before assuming a missing event is a Sentry bug.
+- `telemetry_enabled()` resolves the config **twice** (once to decide, once for the command) so a
+  broken config still reports itself. That duplication is deliberate, ~0.1 ms.
+- `sentry` is a **default** feature right now. Anything that must prove the feature-off path
+  (`sentry` absent from the graph, no dead_code warning) has to build with
+  `--no-default-features`. Feature-off items must stay behind `#[cfg(feature = "telemetry")]` or the
+  build warns.
+- `panic = "abort"` in the release profile means the Sentry panic hook has nothing to unwind: only
+  explicitly captured errors leave a release binary.
+- Never call `sentry::init(())` — the no-argument form reads ambient `SENTRY_DSN` and arms telemetry
+  behind the config gate's back. `sentry::init((dsn, options))` keeps the gate explicit.
+- `.env` is read only in debug builds, from the process's current directory, by `load_dotenv` in
+  `crates/apc-cli/src/main.rs` (no dependency; `KEY=VALUE`, `#` comments, existing env wins). Release
+  builds ignore it on purpose.
+- `release-health` is off (`auto_session_tracking: false`): session tracking is usage metrics, which
+  SPEC §9.8 rules out.
+
+## Build environment (this machine, Nov 2026)
+
+- crates.io downloads crawl at ~7 KB/s and `cargo add` / online `cargo build` hang on the index. Build
+  with `--offline`; the registry cache already holds almost everything.
+- `sentry 0.48.2` is cached but `sentry-anyhow` is not, so no `capture_anyhow` — use
+  `sentry::capture_error(error.as_ref())` with an explicit
+  `&(dyn std::error::Error + Send + Sync + 'static)` binding (plain `as_ref()` is ambiguous).
+- `ureq 3.3.0` needs `der ^0.8.0`, which is yanked: an offline resolve dies there. Use sentry's
+  `reqwest` + `rustls` features (reqwest 0.13.4 is cached) and skip the `transport` feature, which
+  pulls `native-tls`.
+- `webpki-roots 1.0.11` was missing from the cache and had to be fetched by hand into
+  `~/.cargo/registry/cache/index.crates.io-*/`. If a build fails with "attempting to make an HTTP
+  request, but --offline was specified", that is the fix.
+
 ## Spec vs README: traps
 
 `SPEC.md` §8 lists decisions that deliberately contradict the README. Reverting one without reading

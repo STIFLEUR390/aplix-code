@@ -71,8 +71,16 @@ dependency to `apc-agent` or `apc-cli`.
 - **No dynamic plugin loading in V1**: `apc-plugins` is a static registry; `Plugin`/`MemoryStore`
   traits exist for V1.2 (SPEC §8.7, §9).
 - **No telemetry, analytics or phone-home** — one exception, opt-in Sentry error reporting
-  (SPEC §3.4, §8.9): feature `telemetry`, off by default, no DSN shipped, `APC_TELEMETRY=0` wins
-  over any DSN, `warn`/`error` only, never file/prompt content, initialised in `apc-cli` alone.
+  (SPEC §3.4, §8.9): no DSN shipped, `APC_TELEMETRY=0` wins over any DSN, `warn`/`error` only,
+  never file/prompt content, initialised in `apc-cli` alone.
+  - **Dev phase (now)**: `telemetry` is a *default* feature in `crates/apc-cli/Cargo.toml` and the
+    git-ignored `.env` sets `APC_TELEMETRY=1` + a local DSN (`localhost:8789`). Debug builds load
+    `.env` via `dotenvy`; release builds never do.
+  - The v1.0 release task (`ykajrzj02vow3xnfvd9s1rv1`) flips `default = []`, swaps in the production
+    DSN and re-checks the size budget. Don't "clean up" the dev defaults before that task.
+  - `panic = "abort"` means panic events only reach Sentry in debug builds.
+  - Cost of the feature: release binary 6.2 MB with Sentry vs 893 KB without — still inside the
+    15 MB budget, but re-measure whenever the dependency is updated.
 - **`#![forbid(unsafe_code)]` in every crate, no exception** in V1 (SPEC §8.8).
 - **Binary < 15 MB**, models downloaded on demand (resumable + SHA-256 verified), never bundled.
   Release profile: `lto`, `codegen-units = 1`, `strip = "symbols"`, `panic = "abort"`,
@@ -84,12 +92,14 @@ dependency to `apc-agent` or `apc-cli`.
 ## Commands
 
 ```bash
-cargo build --release                    # ./target/release/apc --version
+cargo build --offline                    # this machine cannot reach crates.io at usable speed
+./target/release/apc --version
 cargo test --workspace
 cargo test -p apc-core config            # single crate / single test (substring match)
 cargo test -p apc-cli --test cli         # CLI end-to-end
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+cargo build --no-default-features        # compiles the Sentry feature out
 ```
 
 The CLI tests spawn `CARGO_BIN_EXE_apc` with a throwaway `HOME`/`XDG_CONFIG_HOME`, so they never read

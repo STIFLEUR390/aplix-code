@@ -16,6 +16,13 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 directories = "5"
 serde = { version = "1", features = ["derive"] }
+sentry = { version = "0.48", default-features = false, features = [
+  "backtrace",
+  "contexts",
+  "panic",
+  "reqwest",
+  "rustls",
+] }
 thiserror = "2"
 toml = "0.8"
 
