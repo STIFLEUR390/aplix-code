@@ -21,10 +21,14 @@
 | v0.5 | Opt-in telemetry: `tracing` logs + Sentry, off by default — **done** |
 | v1.0 | MVP: CI (`fmt`, clippy ×3 shapes, tests, size gate) + tagged releases Linux/macOS/Windows — **done** ; télémetrie compilée uniquement sur `--features telemetry` — **done** |
 | v1.1 | TUI `ratatui` (transcript + streaming + guard in the footer) — **done** ; classification d'intention et `skills/` — **à faire** |
-| v1.2 | SearXNG + Obscura plugins, dynamic plugin loading |
-| v1.3 | Long-term memory (SQLite + FTS5 / `sqlite-vec`) |
-| v2.0 | `apc serve` + Tauri |
-| v2.1 | Advanced sandboxing (landlock/seatbelt) or WASM plugins |
+| v1.2 | SearXNG + Obscura plugins, dynamic plugin loading — kaneo `jlepnj0w4n4mc6cu32lcejp1` (due 2027-03-29) |
+| v1.2b | Décider si `rig` remplace les adapters + la boucle d'agent — kaneo `d6k5r9tql0itnp3c82l5vzfs` (due 2027-04-12) |
+| v1.3 | Long-term memory (SQLite + FTS5 / `sqlite-vec`) — kaneo `o47602h7odoky3hbjckrvrr9` (due 2027-04-26) |
+| v2.0 | `apc serve` (axum) + Tauri client — kaneo `rfqlho1w48tayi2h8n0u4oey` (due 2027-05-24) |
+| v2.1 | Advanced sandboxing (landlock/seatbelt) or WASM plugins — kaneo `wkjodf93o65nnbou214pform` (due 2027-06-14) |
+
+Chaining: v1.1 blocks v1.2, which blocks v1.2b, which blocks v1.3, which blocks v2.0, which blocks
+v2.1 (kaneo `blocks` relations).
 
 A request that jumps to a later milestone usually means: build the earlier foundation first, or scope
 the change so it doesn't depend on what does not exist yet.

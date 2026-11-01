@@ -94,6 +94,23 @@ dependency to `apc-agent` or `apc-cli`.
   `tool_calls` + `role: tool`, Anthropic `tool_use`/`tool_result` blocks). Tool arguments arrive as a
   raw JSON **string** because that is how providers stream them; the agent parses them once.
 
+## Roadmap boundaries (v1.2 → v2.1)
+
+Kaneo holds one task per milestone, chained by `blocks` relations; ids are in `.ai-memory/workflows.md`.
+Before starting one, read its acceptance criteria — they name the traps that bite:
+
+- **v1.2** network tools: an unconfigured tool must not appear in the schema sent to the model.
+- **v1.2b** decides whether `rig` (docs <https://rig.rs/docs>) replaces `apc-models` + `apc-agent`.
+  `rig` is not a dependency today (SPEC §8.2); the task re-opens the decision with `cargo tree` and
+  binary size as the measures. Never let `rig` types rise above `apc-models`/`apc-agent`.
+- **v1.3** long-term memory: `rusqlite` is **not** in this machine's cargo cache, so a task that
+  assumes it will stall at `cargo fetch`.
+- **v2.0** `apc serve`: axum 0.7 and tauri 2.11 *are* cached; loopback + token, guard over the API.
+- **v2.1** sandboxing: `landlock`, `wasmtime` and `extism` are **not** cached either.
+
+Cache absence is not fatal — it costs a slow download (~3 KB/s here) — but it must be disclosed
+before a task starts, not discovered mid-build.
+
 ## Chat view (v1.1)
 
 `crates/apc-cli/src/tui.rs` draws the full-screen view with `ratatui` + `crossterm`; the plain REPL

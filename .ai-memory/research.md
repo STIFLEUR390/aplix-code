@@ -2,9 +2,24 @@
 
 ## Reference projects (links verified 2026-11-01)
 
-- `rig` — source <https://github.com/0xPlaygrounds/rig>, docs <https://rig.rs/docs>. Not a
-  dependency: we read it for agent-loop and provider-abstraction ideas, and its types never enter
-  our crates (SPEC §8.2).
+- `rig` — source <https://github.com/0xPlaygrounds/rig>, docs <https://rig.rs/docs>. **Not yet a
+  dependency** (SPEC §8.2). Verified through Context7 (`/0xplaygrounds/rig`, 803 snippets) on
+  2026-11-01, API 0.44+:
+  - `Tool` trait: `const NAME`, `type Args: Deserialize`, `type Output`, `type Error`,
+    `description()`, `parameters() -> Value` (JSON Schema), `annotations() -> ToolAnnotations`
+    ("what calling the tool does to the world, for the host's policies (approval, plan mode,
+    which calls run side by side)"), `footprint(&args) -> Touches`, `call(&self, &mut ToolContext,
+    Args) -> impl Future`. `ToolDyn` is **gone** — runtime-named agents use `DynamicTool` /
+    `Agent::into_tool()`.
+  - `agent.runner(prompt).history(history).max_turns(3).run()` / `.stream()` replaces the removed
+    `completion()` / `stream_completion()`.
+  - `AgentHook` replaced `PromptHook`/`HookAction` (removed before 0.44): `on_run_start`,
+    `on_completion_call` (patch the prompt or stop), `on_model_select` (synchronous, local),
+    `on_run_settled`; streaming deltas are `TextDelta { delta, aggregated }`,
+    `ReasoningDelta { part, delta, aggregated }`, `ToolCallDelta { part, tool_name, delta,
+    aggregated }` — tool calls are *not* executed before their end.
+  - Open question for the spike: whether `ToolAnnotations` can carry our risk threshold, or whether
+    the guard has to sit in an `AgentHook`.
 - `harness-rs` — <https://github.com/liliang-cn/harness-rs> (the "everything is a plugin" layout
   behind `apc-traits` + `apc-plugins`).
 - `OpenCode` — <https://github.com/anomalyco/opencode> (server-first design target for `apc serve`).

@@ -268,6 +268,7 @@ opt-level = 3      # voir §8.5 : la vitesse primait sur la taille
 | v1.0 | MVP stable : CLI, docs, CI, releases Linux/macOS/Windows |
 | v1.1 | TUI `ratatui`, classification d'intention, `skills/` |
 | v1.2 | Plugins de recherche web (SearXNG) et d'extraction (Obscura) |
+| v1.2b | Décider si `rig` remplace nos adapters et notre boucle d'agent (voir §8.2) |
 | v1.3 | Mémoire long terme (SQLite + FTS5 ou `sqlite-vec`) |
 | v2.0 | `apc serve` (serveur HTTP local) + application Tauri |
 | v2.1 | Sandboxing avancé (`landlock`/`seatbelt`) ou plugins WASM |
@@ -299,6 +300,16 @@ formats de réponse : les combiner impose une couche de conversion permanente, d
 maintenir, et surtout **enferme `apc-traits` dans les types de `rig`** — l'inverse de « tout est
 plugin ». `apc-core` définit ses propres types et `apc-models` les traduit en HTTP. Une centaine de
 lignes de boucle ReAct écrites à la main coûtent moins cher que cette dépendance.
+
+**Réévaluation planifiée (v1.2b).** La décision ci-dessus reste valable pour le MVP, mais `rig` a
+beaucoup bougé depuis (API 0.44+) et couvre désormais ce qui nous manque encore : `Tool` typé avec
+`ToolAnnotations` (de quoi porter le Permission Guard au niveau de l'outil), `AgentRunner` avec
+`max_turns` et `stream()`, `AgentHook` (`on_run_start`, `on_completion_call`, `on_model_select`,
+deltas `TextDelta`/`ReasoningDelta`/`ToolCallDelta`) pour les hooks et la compaction, et des stores
+vectoriels pour la mémoire longue. La tâche kaneo `d6k5r9tql0itnp3c82l5vzfs` tranche : adopter,
+adopter partiellement (un seul crate), ou refuser — avec la taille du binaire et `cargo tree` comme
+mesures, et la contrainte inchangée qu'aucun type de `rig` ne remonte au-dessus de `apc-models` /
+`apc-agent`. Docs : <https://rig.rs/docs>.
 
 ### 8.3 Le streaming est dans le trait dès la V1
 
