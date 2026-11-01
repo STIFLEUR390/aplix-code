@@ -86,22 +86,27 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ## 🚀 Quick start
 
-> **Note:** `apc` is not yet on crates.io. Instructions below are the target experience for `v1.0.0`.
+> **Note:** `apc` is not yet on crates.io, so install it from source today.
 
 ```bash
-# Install
-cargo install aplix-code
+# Install (Rust 1.80+)
+git clone https://github.com/STIFLEUR390/aplix-code.git
+cd aplix-code
+cargo install --path crates/apc-cli --offline --locked
 
-# Configure your provider
-export ANTHROPIC_API_KEY="sk-ant-..."
+# Configure any OpenAI-compatible provider
+export OPENAI_API_KEY="sk-..."
 
-# First run: model download (~350 MB, resumable)
-apc init
-apc model download open-jev
+apc init          # writes a commented apc.toml
+apc config        # every value, and which layer supplied it
 
 # Start coding
 apc run "Add a progress bar to the TUI in src/ui.rs"
 ```
+
+Once it is published, the install is `cargo install aplix-code`, and `apc model download open-jev`
+arrives with `v0.4` (`SPEC.md` §7). A local-jev sidecar can already refine the guard today: build
+with `--features open-jev` and set `decision.endpoint` (see `SPEC.md` §8.11).
 
 ---
 
@@ -155,7 +160,7 @@ pub trait Plugin: Send + Sync {
 
 ## 🔒 Security posture
 
-- **No `unsafe`** in user-facing code (`#![forbid(unsafe_code)]` where possible).
+- **No `unsafe`** at all: `#![forbid(unsafe_code)]` in every crate.
 - **Local Permission Guard** on every shell command, with configurable threshold.
 - **No telemetry, no analytics, no phone-home**. The only exception is opt-in Sentry error
   reporting: off by default, no DSN shipped, no user content — see `SPEC.md` §3.4 and §8.9.

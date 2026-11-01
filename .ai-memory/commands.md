@@ -39,7 +39,8 @@ cargo build --offline --no-default-features               # telemetry off
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --workspace
-ls -lh target/release/apc             # must stay under 15 MB (893 KB at v0.1)
+ls -lh target/release/apc             # must stay under 15 MB (6.76 MB at v0.3b, 5.46 MB with
+                                      # --no-default-features; reqwest+tokio dominate, not Sentry)
 ```
 
 ## Single test / single crate

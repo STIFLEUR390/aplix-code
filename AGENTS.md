@@ -142,8 +142,9 @@ dependency to `apc-agent` or `apc-cli`.
   - The v1.0 release task (`ykajrzj02vow3xnfvd9s1rv1`) flips `default = []`, swaps in the production
     DSN and re-checks the size budget. Don't "clean up" the dev defaults before that task.
   - `panic = "abort"` means panic events only reach Sentry in debug builds.
-  - Cost of the feature: release binary 6.2 MB with Sentry vs 893 KB without — still inside the
-    15 MB budget, but re-measure whenever the dependency is updated.
+  - Cost of the feature (v0.3b, `strip` + `lto`): 6 762 440 B with Sentry vs 5 461 176 B with
+    `--no-default-features` — the HTTP stack, not Sentry, dominates. Still inside the 15 MB budget,
+    but re-measure whenever a dependency is updated.
 - **`#![forbid(unsafe_code)]` in every crate, no exception** in V1 (SPEC §8.8).
 - **Binary < 15 MB**, models downloaded on demand (resumable + SHA-256 verified), never bundled.
   Release profile: `lto`, `codegen-units = 1`, `strip = "symbols"`, `panic = "abort"`,
