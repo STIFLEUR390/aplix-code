@@ -65,6 +65,17 @@ apc model remove open-jev
 
 Model cache and sessions live under `${XDG_DATA_HOME:-~/.local/share}/aplix/`.
 
+## Telemetry (opt-in, off by default)
+
+```bash
+APC_SENTRY_DSN=https://key@host/1 APC_TELEMETRY=1 cargo run -p apc-cli -- run "..."  # reports errors
+APC_TELEMETRY=0 ...                                          # force off, beats any DSN
+cargo build --release --no-default-features                  # compiles the `telemetry` feature out
+```
+
+No DSN ⇒ `ClientOptions::new()` keeps `dsn = None` ⇒ disabled client, zero network. Logs stay local
+either way (`tracing` fmt layer).
+
 ## Docs lookup (this machine)
 
 Context7 CLI, no global install needed:

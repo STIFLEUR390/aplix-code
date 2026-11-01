@@ -58,7 +58,9 @@ dependency to `apc-agent` or `apc-cli`.
 - **V1 `apc chat` is a plain stdin/stdout REPL** — no `ratatui`, no panes (SPEC §8.6).
 - **No dynamic plugin loading in V1**: `apc-plugins` is a static registry; `Plugin`/`MemoryStore`
   traits exist for V1.2 (SPEC §8.7, §9).
-- **No telemetry, analytics or phone-home.**
+- **No telemetry, analytics or phone-home** — one exception, opt-in Sentry error reporting
+  (SPEC §3.4, §8.9): feature `telemetry`, off by default, no DSN shipped, `APC_TELEMETRY=0` wins
+  over any DSN, `warn`/`error` only, never file/prompt content, initialised in `apc-cli` alone.
 - **`#![forbid(unsafe_code)]` in every crate, no exception** in V1 (SPEC §8.8).
 - **Binary < 15 MB**, models downloaded on demand (resumable + SHA-256 verified), never bundled.
   Release profile: `lto`, `codegen-units = 1`, `strip = "symbols"`, `panic = "abort"`,

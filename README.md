@@ -150,7 +150,8 @@ pub trait Plugin: Send + Sync {
 
 - **No `unsafe`** in user-facing code (`#![forbid(unsafe_code)]` where possible).
 - **Local Permission Guard** on every shell command, with configurable threshold.
-- **No telemetry, no analytics, no phone-home**. Ever.
+- **No telemetry, no analytics, no phone-home**. The only exception is opt-in Sentry error
+  reporting: off by default, no DSN shipped, no user content — see `SPEC.md` §3.4 and §8.9.
 - **Checksum-verified downloads** for every model.
 - **Explicit, layered configuration** (defaults < user < project < local < env < flags).
 

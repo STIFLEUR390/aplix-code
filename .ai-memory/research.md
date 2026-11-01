@@ -43,20 +43,45 @@ relying on an unverified entry.
 - DeepSeek/Kimi require `reasoning_content` echoed back in the assistant message.
 - Auth/target primitives: `AuthData::from_single("key")`, `ServiceTarget { model, auth, endpoint }`
   — the hook for Ollama / custom gateways.
+- Streaming: `Client::exec_chat_stream(model, chat_req, options: Option<&ChatOptions>) ->
+  Result<ChatStreamResponse>`. `ChatStreamResponse { stream: ChatStream, model_iden }`;
+  `ChatStream` implements `Stream<Item = Result<ChatStreamEvent, Error>>` (drive it with
+  `StreamExt`). Same `Into<ModelSpec>` argument as `exec_chat` (`&str`, `ModelIden`,
+  `ServiceTarget`). So `ModelAdapter::chat` can box a `ChatStream` directly.
 
-## Unverified — stack chosen by SPEC §6
+## Verified — sentry (`/websites/rs_sentry_sentry`)
 
-Nothing read yet; verify before the crate lands in a manifest.
+- `sentry::Client::with_options(ClientOptions)`: **if the DSN is `None` the client is entirely
+  disabled**; `Client::is_enabled()` returns `false` for `ClientOptions::new()`.
+  That is the whole opt-out story — no DSN means no network, no background thread.
+- `sentry::init(ClientOptions)` returns a guard that must stay alive; dropping it flushes/shuts down.
+- Tracing integration: `sentry::integrations::tracing::layer()` (feature `tracing`), registered on
+  the `tracing_subscriber` registry next to the fmt layer. Customise with
+  `.event_filter(|md| match *md.level() { tracing::Level::ERROR => EventFilter::Event, _ =>
+  EventFilter::Ignore })` and `.span_filter(...)`. An event **mapper** overrides the filter when both
+  are set. `traces_sample_rate(f64)` enables spans/transactions; spans are off without it.
 
-- **`genai` streaming** — `ModelAdapter::chat` returns a `ChatStream`. `exec_chat` is verified;
-  the streaming entry point and how tool calls arrive mid-stream are **not**. This is the first
-  thing to look up when v0.2 starts.
-- **`local-jev`** — no docs read. Unknown: inference backend, binary/asset size, whether it can run
-  without a heavy runtime. Directly threatens the 15 MB budget → keep it feature-gated.
-- **`clap` derive** — subcommand tree for `run`/`chat`/`init`/`config`/`model`. Not looked up.
-- **`reqwest` `Range` + `sha2` resume** — plan: HEAD or `Range` from existing `.part` length, append,
-  verify digest, rename. No crate chosen beyond the two.
-- **`directories`** — XDG/`APPDATA` paths for model cache and sessions.
+## Verified — reqwest, directories, clap, tokio
+
+- **`reqwest`** (`/seanmonstar/reqwest`): `Response::bytes_stream()` (feature `stream`) →
+  `impl Stream<Item = Result<Bytes>>`; `Response::chunk()` → next frame; `bytes()` collects.
+  Resume is a `Range: bytes=<n>-` request header on the existing `.part` length — nothing special.
+- **`directories`** (`/websites/rs_directories`): `ProjectDirs::data_dir()` → Linux
+  `$XDG_DATA_HOME` or `~/.local/share`, macOS `~/Library/Application Support`, Windows
+  `{FOLDERID_RoamingAppData}\<project>\data`. Exactly the session path in SPEC §2.5.
+- **`clap`** (`/clap-rs/clap`): `#[derive(Subcommand)]` on an enum registers the variants;
+  `#[command(version, propagate_version = true)]` serves `--version` on the root **and** every
+  subcommand.
+- **`tokio`**: `/tokio-rs/tokio` (and `/websites/rs_tokio`, more snippets) — no API doubt for the
+  runtime; `#[tokio::main]` in `apc-cli` only.
+- Existence checked, no API read needed: `thiserror`, `anyhow`, `sha2`, `toml`, `serde_json`,
+  `ratatui`.
+
+## Unverified — remaining
+
+- **`local-jev`** — no reliable docs source. Context7's only match (`/qew7/jev-feels`) failed to
+  fetch and is probably unrelated; do **not** cite it. Unknown: inference backend, asset size,
+  runtime weight. Directly threatens the 15 MB budget → keep it feature-gated.
 - **`ratatui` + `crossterm`** — v1.1 only, don't research for an MVP task.
 
 ## Open questions

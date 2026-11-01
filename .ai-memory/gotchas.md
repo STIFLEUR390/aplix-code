@@ -22,6 +22,7 @@ the reason is the most likely regression here:
 | Release opt level | `opt-level = "z"` | `opt-level = 3` + strip; size budget is met by stripping (§8.5) |
 | Decision model | required dependency | feature flag; heuristic is always present (§8.1) |
 | `unsafe` | exception for native plugins | none in V1, nothing is loaded dynamically (§8.8) |
+| Telemetry | forbidden outright | opt-in Sentry error reporting, off by default, no DSN shipped (§3.4, §8.9) |
 
 ## Rust edition / MSRV
 
@@ -62,6 +63,18 @@ the reason is the most likely regression here:
 
 - Use workspace `GAiYlKA3Nr2yEh3Ea40IY0f0tvK4rjQ0` and project `f0yyfbfaoe4610r2d2hc8qir`.
   Don't create a parallel workspace/project.
+
+## Telemetry / Sentry
+
+- Never call `sentry::init(())` — it applies library defaults that read ambient env (`SENTRY_DSN`),
+  so reporting could switch on behind the user's back. Build `ClientOptions::new()` and set `dsn`
+  explicitly only after `telemetry = true` in `apc.toml` **and** a DSN was resolved.
+- Nothing is sent without a DSN: `ClientOptions::new()` has `dsn = None` and the client is entirely
+  disabled (`is_enabled() == false`). That is the opt-out, not a `cfg!(test)` hack.
+- Keep the `ClientInitGuard` alive for the whole process (`let _guard = ...`) — dropping it flushes
+  and shuts the transport down.
+- Default event filter: `EventFilter::Event` for `ERROR`, `Ignore` otherwise, so prompts and file
+  contents (which are `debug`/`info` chatter) never leave the machine.
 
 ## Naming
 

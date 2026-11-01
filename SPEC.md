@@ -22,7 +22,8 @@ Objectifs mesurables :
 - **Empreinte :** binaire de base < 15 Mo (hors modèle). Modèle par défaut (`open-jev`) < 400 Mo.
 - **Coût :** zéro coût pour les décisions locales ; coût LLM maîtrisé par le filtrage de contexte.
 - **Confidentialité :** aucune donnée tierce pour les décisions locales ; les appels LLM sont la
-  seule sortie réseau, vers le provider choisi.
+  seule sortie réseau, vers le provider choisi. Seule exception, l'error-reporting opt-in de §3.4,
+  **désactivé par défaut**.
 
 ---
 
@@ -116,6 +117,24 @@ première compilation, et elle reste le filet de sécurité en production.
 - **Qualité** : `cargo clippy --all-targets -- -D warnings` et `cargo fmt --check` passent ; tests
   unitaires + intégration par crate.
 
+### 3.4 Télémétrie et diagnostic (opt-in, désactivée par défaut)
+
+- **But** : diagnostiquer erreurs et panics en production sans trahir la promesse « aucune
+  télémétrie » du README. Ce n'est pas de la télémétrie produit : aucune métrique d'usage, jamais de
+  contenu utilisateur.
+- **Protocole** : [Sentry](https://crates.io/crates/sentry) (`sentry` + `tracing` /
+  `tracing-subscriber`), donc compatible avec tout DSN Sentry ou GlitchTip auto-hébergé.
+- **Défaut : désactivée.** Sans DSN, le client est entièrement inactif : `ClientOptions::new()` laisse
+  `dsn = None` et `sentry::Client::with_options` renvoie un client désactivé (`is_enabled() == false`).
+- **Activation** : un DSN dans l'environnement (`APC_SENTRY_DSN`, sinon `SENTRY_DSN`) **et**
+  `telemetry = true` dans `apc.toml`. Le DSN n'est jamais écrit dans un fichier commité.
+- **Désactivation** : `APC_TELEMETRY=0` l'emporte sur tout (même un DSN présent) ; sinon absence de
+  DSN ; sinon feature `telemetry` non compilée (`--no-default-features`).
+- **Contenu envoyé** : erreurs, panics, et breadcrumbs `tracing` de niveau `warn`/`error` uniquement
+  par défaut. Jamais le contenu des fichiers, des prompts ni des réponses du modèle.
+- **Câblage** : le subscriber `tracing` (logs locaux, toujours actifs) et le layer Sentry sont montés
+  dans la racine de composition `apc-cli`. Aucune crate de bibliothèque n'initialise de client.
+
 ---
 
 ## 4. Architecture cible
@@ -203,6 +222,7 @@ pub trait Plugin: Send + Sync {
 | Chemins | `directories` | Respect de `XDG_DATA_HOME` / `%APPDATA%` / `~/Library`. |
 | Erreurs | `thiserror` (libs) + `anyhow` (CLI) | Séparation erreurs de bibliothèque / applicatives. |
 | Async | `tokio` | Compatible `genai`, `reqwest`. |
+| Télémétrie (opt-in) | `sentry` + `tracing` + `tracing-subscriber` (feature `telemetry`, off par défaut) | Voir §3.4 et §8.9 ; `sentry` n'est compilé que si la feature est active, pour ne pas peser sur le budget de 15 Mo. |
 | TUI (V1.1) | `ratatui` + `crossterm` | Hors MVP. |
 
 Profil de release :
@@ -226,6 +246,7 @@ opt-level = 3      # voir §8.5 : la vitesse primait sur la taille
 | v0.2 | `apc run` + `apc chat` (REPL texte) via `genai`, streaming |
 | v0.3 | Permission Guard : heuristique puis `open-jev` + fallback |
 | v0.4 | `apc model` + téléchargement reprenable |
+| v0.5 | Télémétrie opt-in : logs `tracing` locaux + Sentry désactivé par défaut |
 | v1.0 | MVP stable : CLI, docs, CI, releases Linux/macOS/Windows |
 | v1.1 | TUI `ratatui`, classification d'intention, `skills/` |
 | v1.2 | Plugins de recherche web (SearXNG) et d'extraction (Obscura) |
@@ -302,6 +323,15 @@ Le cahier des charges prévoyait une exception pour le chargement de plugins nat
 chargement dynamique est hors périmètre V1, l'exception disparaît : `#![forbid(unsafe_code)]` sur
 **tous** les crates, sans dérogation. Elle reviendra avec la V1.2, dans un crate dédié et isolé.
 
+### 8.9 La télémétrie est opt-in, pas interdite
+
+Le README promet « no telemetry ». Une intégration Sentry n'est pas de la télémétrie produit : elle
+ne collecte aucune métrique d'usage et ne s'active que sur décision explicite de l'utilisateur, avec
+son propre DSN. Les deux coexistent à trois conditions, toutes vérifiables dans le code :
+**désactivée par défaut**, **aucun DSN livré**, **jamais de contenu utilisateur**. C'est la seconde
+sortie réseau possible après le provider LLM, et elle est nulle tant que l'utilisateur ne l'a pas
+armée. Le README et `AGENTS.md` sont alignés sur cette exception.
+
 ---
 
 ## 9. Hors périmètre V1 (explicite)
@@ -314,3 +344,4 @@ chargement dynamique est hors périmètre V1, l'exception disparaît : `#![forbi
 5. Multi-agents : un seul agent.
 6. Sandboxing avancé (Bubblewrap, Landlock, Seatbelt).
 7. TUI riche (`ratatui`).
+8. Collecte de métriques d'usage / analytics : seule l'error-reporting opt-in de §3.4 existe.

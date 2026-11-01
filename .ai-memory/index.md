@@ -49,7 +49,8 @@ for the README's version of a §8 decision, say why it was changed instead of si
   goes behind a trait in `apc-traits`.
 - Every `run_shell` passes the Permission Guard (`P > 0.8` ⇒ confirmation). No bypass.
 - The heuristic Permission Guard ships **first**; the neural model is optional (feature-gated).
-- No telemetry, no analytics, no phone-home. Ever.
+- No telemetry, no analytics, no phone-home — one exception: opt-in Sentry error reporting,
+  disabled by default, no DSN shipped, never user content (SPEC §3.4, §8.9).
 - `#![forbid(unsafe_code)]` everywhere, no exception in V1.
 - Config precedence: defaults < user < project < local < env < flags. File: `apc.toml`. API keys
   from the environment only.

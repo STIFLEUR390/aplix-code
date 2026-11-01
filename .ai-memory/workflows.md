@@ -47,7 +47,8 @@ kaneo MCP, fixed IDs:
 
 - `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`
   (once they exist).
-- Re-check the constraints this repo is judged on: no unsafe, no telemetry, no provider-specific dep
+- Re-check the constraints this repo is judged on: no unsafe, no default-on telemetry (Sentry is
+  opt-in and inert without a DSN), no provider-specific dep
   in `apc-agent`/`apc-cli`, release binary still under 15 MB (`ls -lh target/release/apc`),
   Permission Guard reachable from every shell execution path.
 - If you learned something durable (a pin, a workaround, a doc fact), write it into `.ai-memory/`

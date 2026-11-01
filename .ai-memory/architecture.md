@@ -96,6 +96,15 @@ Through `genai`: OpenAI, Anthropic, Gemini, Ollama, DeepSeek, OpenRouter, Groq. 
 JSONL under `${XDG_DATA_HOME:-~/.local/share}/aplix/sessions/`, one file per session. `apc chat
 --continue` reloads the latest. No long-term memory in V1 (v1.3).
 
+## Telemetry (opt-in, off by default)
+
+Local logs are always on: `tracing` + `tracing-subscriber` (fmt layer), mounted in `apc-cli`.
+Sentry is a second, **optional** layer on the same registry, compiled behind the `telemetry`
+feature and inert without a DSN (`ClientOptions::new()` → `dsn = None` → disabled client).
+
+Rules: no DSN shipped, `APC_TELEMETRY=0` beats any DSN, `warn`/`error` breadcrumbs only, and never
+file/prompt/completion content. Libraries do not initialise a client; only `apc-cli` does.
+
 ## Post-MVP (do not build during an MVP task)
 
 `ratatui` TUI (v1.1), intent classification (v1.1), `skills/` (v1.1), SearXNG + Obscura plugins
