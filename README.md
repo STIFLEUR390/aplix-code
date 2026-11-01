@@ -14,7 +14,7 @@
 
 ---
 
-> **⚠️ Early-stage project.** The MVP feature set is in place and installs from source or a release build, but the crate is still versioned `0.1.0` and nothing is published yet. Expect breaking changes until the `v1.0.0` tag is cut. Star ⭐ the repo to follow the journey.
+> **⚠️ Early-stage project.** `v1.0.0` ships the MVP feature set as a prebuilt binary or from source. The crate is not published to crates.io yet, and the APIs may still move before `v2.0`. Star ⭐ the repo to follow the journey.
 
 ---
 

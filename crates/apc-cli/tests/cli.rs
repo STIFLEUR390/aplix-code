@@ -163,7 +163,10 @@ fn version_reports_the_decision_model() {
     let output = apc(&dir, &["--version"]);
     assert!(output.status.success(), "{}", stderr(&output));
     let text = stdout(&output);
-    assert!(text.contains("apc 0.1.0"), "{text}");
+    assert!(
+        text.contains(&format!("apc {}", env!("CARGO_PKG_VERSION"))),
+        "{text}"
+    );
     assert!(text.contains("decision model"), "{text}");
 }
 
