@@ -18,8 +18,17 @@
     `on_run_settled`; streaming deltas are `TextDelta { delta, aggregated }`,
     `ReasoningDelta { part, delta, aggregated }`, `ToolCallDelta { part, tool_name, delta,
     aggregated }` — tool calls are *not* executed before their end.
-  - Open question for the spike: whether `ToolAnnotations` can carry our risk threshold, or whether
-    the guard has to sit in an `AgentHook`.
+  - **Answered in v1.2b** (rig 0.46, read from source, not docs): the guard belongs in an
+    `AgentHook`, not in `ToolAnnotations`. `rig-agent/src/agent/hook.rs` has
+    `on_dispatch -> DispatchAction { Proceed, Patch(EffectKind), Deny(ErrorReport) }` — a hook can
+    refuse a call *before* it runs (`ObservationAction { Continue, Stop(String) }` afterwards).
+    `ToolAnnotations` only describes the tool to the host's policy layer.
+  - rig 0.46 is now a workspace of crates: `rig-core` (contracts + `providers/`), `rig-agent`
+    (`AgentRunner`, `AgentHook`, `AgentRun`), `rig-http` / `rig-reqwest` (transport), `rig-tools`,
+    `rig-memory` (**non-optional** dep of `rig-agent`). Workspace `rust-version = "1.97.1"`,
+    `edition = "2024"`. `rig-reqwest` defaults to `rustls`, which maps to `reqwest/rustls` →
+    `__rustls-aws-lc-rs` — the §8.10 Ubuntu 22.04 wall. Spike in `/tmp/rigspike`: +38 crates.
+    Verdict in SPEC §8.2.
 - `harness-rs` — <https://github.com/liliang-cn/harness-rs> (the "everything is a plugin" layout
   behind `apc-traits` + `apc-plugins`).
 - `OpenCode` — <https://github.com/anomalyco/opencode> (server-first design target for `apc serve`).
@@ -129,6 +138,21 @@ installed source at `~/.cargo/registry/src/*/local-jev-2.0.0/`. Findings, measur
   `["safe","destructive"]` it returns `destructive 1.0` for `ls -la` as well as `rm -rf /`. Therefore:
   no ONNX artifact to download, and the backend cannot be validated for quality until a real runtime
   exists. `flat()` in `crates/apc-decision/src/jev.rs` treats the flat answer as no opinion.
+
+## `rusqlite` 0.39 `bundled` (verified 2026-11-01, v1.3)
+
+- Feature `bundled` compiles the SQLite amalgamation into the binary: no system library, so the four
+  CI targets (Linux glibc, macOS, Windows) all get the same SQLite.
+- `libsqlite3-sys` 0.37.0 `build.rs` passes `-DSQLITE_ENABLE_FTS5` (lines 130-132) — FTS5 is available
+  without asking for another feature. No `cmake`, no `pkg-config` needed.
+- Version ladder matters: 0.39 is the last with `bundled` (0.40 dropped it) and the last whose MSRV
+  fits Rust 1.80 (0.41 requires 1.89).
+- `Connection` is `Send` but not `Sync`: one connection behind a `Mutex` is the simple shape.
+- External-content FTS5 (`content='messages'`) keeps the index in the same table's rowids; the
+  `AFTER INSERT` trigger is what keeps it in step, so nothing writes `messages_fts` directly.
+- Snippet extraction is `snippet(messages_fts, 0, '[', ']', '…', 16)`; ranking is `messages_fts.rank`.
+  A query that is only punctuation or short words must be handled before it reaches `MATCH`, or it
+  raises a syntax error: quoting every word (`"{w}"`) is what makes that safe.
 
 ## Unverified — remaining
 - **`ratatui` + `crossterm`** — v1.1 only, don't research for an MVP task.

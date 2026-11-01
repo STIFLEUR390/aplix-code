@@ -322,15 +322,11 @@ fn run_reports_a_non_stream_response() {
     );
 }
 
-/// The single session file the sandbox holds.
-fn session_file(dir: &Path) -> PathBuf {
-    let sessions = dir.join("data/aplix/sessions");
-    let files: Vec<PathBuf> = std::fs::read_dir(&sessions)
-        .expect("sessions dir")
-        .map(|entry| entry.expect("entry").path())
-        .collect();
-    assert_eq!(files.len(), 1, "{files:?}");
-    files[0].clone()
+/// The memory database the sandbox holds.
+fn memory_db(dir: &Path) -> PathBuf {
+    let path = dir.join("data/aplix/memory.db");
+    assert!(path.is_file(), "no memory database at {}", path.display());
+    path
 }
 
 #[test]
@@ -344,26 +340,60 @@ fn chat_persists_a_session_and_continues_it() {
     let env = [("APC_BASE_URL", base.as_str()), ("APC_API_KEY", "test")];
     let first = apc_stdin(&dir, &["chat"], &env, "bonjour\nquit\n");
     assert!(first.status.success(), "{}", stderr(&first));
-
-    let path = session_file(&dir);
-    let text = std::fs::read_to_string(&path).expect("read session");
-    assert_eq!(text.lines().count(), 2, "{text}");
-    assert!(text.contains("\"role\":\"user\""), "{text}");
-    assert!(text.contains("\"role\":\"assistant\""), "{text}");
+    memory_db(&dir);
 
     let port = sse_server(answer);
     let base = format!("http://127.0.0.1:{port}/v1");
     let env = [("APC_BASE_URL", base.as_str()), ("APC_API_KEY", "test")];
     let second = apc_stdin(&dir, &["chat", "--continue"], &env, "encore\nquit\n");
     assert!(second.status.success(), "{}", stderr(&second));
+    // The first exchange (user + assistant) came back from the database.
     assert!(
-        stderr(&second).contains("continuing session"),
+        stderr(&second).contains("continuing session") && stderr(&second).contains("(2 messages)"),
         "{}",
         stderr(&second)
     );
 
-    let text = std::fs::read_to_string(session_file(&dir)).expect("read session");
-    assert_eq!(text.lines().count(), 4, "{text}");
+    let port = sse_server(answer);
+    let base = format!("http://127.0.0.1:{port}/v1");
+    let env = [("APC_BASE_URL", base.as_str()), ("APC_API_KEY", "test")];
+    let third = apc_stdin(&dir, &["chat", "--continue"], &env, "quit\n");
+    assert!(third.status.success(), "{}", stderr(&third));
+    assert!(
+        stderr(&third).contains("(4 messages)"),
+        "{}",
+        stderr(&third)
+    );
+}
+
+#[test]
+fn a_new_session_is_reminded_of_an_earlier_one() {
+    let dir = sandbox("recall");
+    assert!(apc(&dir, &["init"]).status.success());
+    let answer = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n";
+
+    let port = sse_server(answer);
+    let base = format!("http://127.0.0.1:{port}/v1");
+    let env = [("APC_BASE_URL", base.as_str()), ("APC_API_KEY", "test")];
+    let first = apc_stdin(
+        &dir,
+        &["chat"],
+        &env,
+        "le fournisseur rustls compte\nquit\n",
+    );
+    assert!(first.status.success(), "{}", stderr(&first));
+
+    // A new session (no `--continue`), so the recall has to come from the database.
+    let (port, request) = capturing_server(answer);
+    let base = format!("http://127.0.0.1:{port}/v1");
+    let env = [("APC_BASE_URL", base.as_str()), ("APC_API_KEY", "test")];
+    let second = apc_stdin(&dir, &["chat"], &env, "rustls encore\nquit\n");
+    assert!(second.status.success(), "{}", stderr(&second));
+
+    let sent = request
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the request body");
+    assert!(sent.contains("Earlier sessions said"), "{sent}");
 }
 
 #[test]

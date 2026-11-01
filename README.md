@@ -71,8 +71,9 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
   current project heads the conversation as the system prompt. No skill file, no system prompt.
 - **Local Permission Guard** — Every shell command is scored before it runs (`rm -rf`, `DROP TABLE`, `mkfs`…), and anything above the threshold needs an explicit confirmation. The built-in heuristics need no model at all; building with `--features open-jev` lets a local-jev sidecar answer first and falls back to them on any failure.
 - **Multi-provider support** over the two dialects in use (`/chat/completions` compatible OpenAI, `/messages` Anthropic): OpenAI, Anthropic, Ollama, DeepSeek, OpenRouter, Groq, and any compatible local gateway.
-- **Session persistence** — Resume a conversation with `apc chat --continue`; sessions are JSONL under
-  `${XDG_DATA_HOME:-~/.local/share}/aplix/sessions/`.
+- **Session persistence** — Resume a conversation with `apc chat --continue`; sessions live in SQLite
+  at `${XDG_DATA_HOME:-~/.local/share}/aplix/memory.db`, and each turn is prefixed with what earlier
+  sessions said about the prompt (FTS5).
 - **Local logs** — `APC_LOG=debug|info|warn|error` on stderr, no network, no DSN needed.
 - **Opt-in error reporting** — Sentry-compatible, compiled out by default (`--features telemetry` to build it in), off without a DSN and a config flag.
 - **`apc model <cmd>`** — Manage local decision models (`list`, `download`, `status`, `verify`, `remove`), with resumable, SHA-256 verified downloads. The catalog is empty for now: no upstream artifact exists (`SPEC.md` §8.12).
@@ -84,7 +85,7 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ### 🔮 Post-MVP (V1.x – V2)
 
-- Local memory (SQLite + `sqlite-vec` for RAG over past sessions).
+- Vector recall over past sessions (`sqlite-vec`), once embeddings are computed locally.
 - JavaScript-rendered page extraction (CDP or `obscura mcp --http`, `SPEC.md` §8.13).
 - Dynamic plugin loading (native `.so` or WASM).
 - `apc serve` — local HTTP server, for editor integrations.
@@ -137,7 +138,7 @@ aplix-code/
 │   ├── apc-tools/      # Built-in tools (fs, shell).
 │   ├── apc-decision/   # Heuristic guard + `open-jev` client (feature-gated).
 │   ├── apc-models/     # LLM provider adapters (direct HTTP, SSE streaming).
-│   ├── apc-memory/     # Session history (JSONL); long-term memory lands in v1.3.
+│   ├── apc-memory/     # Session history + FTS5 recall (SQLite, imports old JSONL sessions).
 │   ├── apc-plugins/    # Static plugin registry (dynamic loading lands in v1.2).
 │   └── apc-cli/        # The `apc` binary.
 └── .ai-memory/         # Notes for coding agents (start at `index.md`).
@@ -235,7 +236,7 @@ cargo test --workspace                        # fmt + clippy -D warnings are par
 | **v1.0** | MVP: CLI, docs, CI matrix and cross-platform release builds |
 | **v1.1** | `ratatui` TUI, intent classification, project `skills/` |
 | **v1.2** | SearXNG + Obscura plugins |
-| **v1.3** | Long-term memory (SQLite + FTS5 / `sqlite-vec`) |
+| **v1.3** | Long-term memory (SQLite + FTS5, old JSONL sessions imported) |
 | **v2.0** | `apc serve` + Tauri desktop app |
 | **v2.1** | Advanced sandboxing (Landlock/Seatbelt) or WASM plugins |
 

@@ -44,7 +44,7 @@ for the README's version of a §8 decision, say why it was changed instead of si
 ## Hard rules
 
 - **v1.0 is in place.** Cargo workspace at `crates/*` (9 crates, `resolver = "2"`, edition 2021,
-  MSRV 1.80), every crate holds code: config, traits, HTTP adapters, JSONL sessions, heuristic guard
+  MSRV 1.80), every crate holds code: config, traits, HTTP adapters, SQLite + FTS5 sessions, heuristic guard
   + `open-jev` sidecar client, the resumable model store, file/shell tools, the agent loop, the tool
   registry and the `apc` binary; local `tracing` logs are always on, Sentry is compiled only with `--features telemetry`. CI runs
   fmt, clippy and tests in three feature shapes, and tags build Linux/macOS/Windows artifacts under

@@ -32,6 +32,20 @@ pub trait MemoryStore: Send + Sync {
 
     /// Replay a session, or the most recent one when `session` is `None`.
     async fn load(&self, session: Option<&SessionId>) -> Result<Vec<Message>>;
+
+    /// What earlier sessions said about `query`, best match first.
+    ///
+    /// The query is plain text: callers pass a prompt as written, not a search syntax.
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<Recall>>;
+}
+
+/// A passage of an earlier session, as returned by [`MemoryStore::search`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Recall {
+    /// The session it was written in.
+    pub session: SessionId,
+    /// The message around the match, possibly cut.
+    pub snippet: String,
 }
 
 /// A capability the model can invoke.

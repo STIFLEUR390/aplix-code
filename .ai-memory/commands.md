@@ -126,7 +126,8 @@ apc model remove <id>
 ```
 
 Models and sessions live under `${XDG_DATA_HOME:-~/.local/share}/aplix/`
-(`models/<id>.bin` with `<id>.bin.part` while downloading, `sessions/<id>.jsonl` per conversation).
+(`models/<id>.bin` with `<id>.bin.part` while downloading, `memory.db` for every conversation,
+plus any pre-v1.3 `sessions/<id>.jsonl`, imported on first run and then left alone).
 
 ## Telemetry (Sentry)
 

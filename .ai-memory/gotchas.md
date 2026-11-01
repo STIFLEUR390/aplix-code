@@ -50,14 +50,19 @@
 - CLI tests fake the network with a one-shot `TcpListener` + canned SSE body; never point a test at
   the real relay.
 
-## Session memory (v0.2b)
+## Session memory (v0.2b, SQLite since v1.3)
 
-- Files are append-only JSONL, one `Message` per line. Never rewrite a session file in place: a
-  reader (`load`) tolerates only the *last* line being torn, and silently skips any unparsable line.
+- `rusqlite` is pinned **0.39 with `bundled`**: 0.40 dropped `bundled` (the no-system-dependency
+  promise dies with it) and 0.41 needs Rust 1.89 while the floor is 1.80. Bumping means rechecking
+  both, and re-measuring the binary (10 054 128 B at v1.3, gate 15 728 640).
+- Bundled SQLite compiles FTS5 in (`-DSQLITE_ENABLE_FTS5` in `libsqlite3-sys` build.rs). A schema
+  change that drops `messages_fts` also drops search: `MemoryStore::search` is a required trait
+  method, so a store without it does not compile.
 - Session ids are `{:013}-{:06}` unix seconds+microseconds — swapping to UUIDs would break the
-  "latest = sort by name" rule that `latest_session()` relies on.
-- Two sessions created in the same microsecond would collide; the ordering assumption is worth more
-  than a UUID, and a collision only merges two bots' turns.
+  "latest = ORDER BY id DESC" rule that `latest_session()` relies on.
+- JSONL is import-only now: `SqliteStore::new()` imports `sessions/*.jsonl` once and leaves the files
+  alone. Never re-add a write path there — two sources of truth for history is how a turn gets lost.
+- The import skips unparsable lines (a torn tail from a v1.0 crash) and is idempotent per session id.
 - `load(None)` means latest, so a caller that wants "start fresh" must call `new_session()`, not
   `load(None)`.
 - `apc chat` writes the user turn before the request: a provider failure still leaves the prompt in

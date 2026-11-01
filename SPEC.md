@@ -82,11 +82,15 @@ première compilation, et elle reste le filet de sécurité en production.
 - **Configuration** : provider et modèle dans `apc.toml`. Les clés API viennent de l'environnement
   (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …), jamais du fichier de config commité.
 
-### 2.5 Mémoire (minimale)
+### 2.5 Mémoire
 
-- **Mémoire de session** : historique de conversation en JSONL sous
-  `${XDG_DATA_HOME:-~/.local/share}/aplix/sessions/`. Reprise via `apc chat --continue`.
-- **Pas de mémoire long terme en V1** (schéma, oubli, distillation → V1.3).
+- **Mémoire de session** : historique dans `${XDG_DATA_HOME:-~/.local/share}/aplix/memory.db`
+  (SQLite + FTS5). Reprise via `apc chat --continue`.
+- **Rappel** : avant chaque tour, les trois meilleurs résultats FTS5 des *autres* sessions sont
+  préfixés au prompt dans un message système. Un magasin qui échoue ne bloque pas le tour : il n'y a
+  simplement pas de rappel (voir §8.14).
+- Les `sessions/*.jsonl` d'avant la v1.3 sont importés au premier démarrage puis laissés en place :
+  le JSONL est désormais un format d'import, plus un format d'écriture.
 
 ---
 
@@ -158,7 +162,7 @@ crates/
   apc-tools/     outils intégrés (fs, shell)
   apc-decision/  Permission Guard : heuristique puis open-jev
   apc-models/    adapters LLM (genai)
-  apc-memory/    session JSONL (+ backends futurs)
+  apc-memory/    sessions SQLite + FTS5 (JSONL importé en v1.3)
   apc-plugins/   registre statique des plugins
   apc-cli/       le binaire `apc` — racine de composition
 skills/          définitions de skills en Markdown (V1.1+)
@@ -235,7 +239,7 @@ pub trait Plugin: Send + Sync {
 | Décision locale | `local-jev` (derrière un feature flag) + heuristique | Voir §8.1. |
 | Téléchargement modèle | `reqwest` + `sha2` + `futures` | Voir §8.4 : reprise `Range` et digest faits à la main. |
 | Configuration | `toml` + `serde` | Standard, lisible. |
-| Mémoire de session | `serde_json` + `std::fs` (JSONL) | Simple, robuste, débuggable. Pas de base pour le MVP. |
+| Mémoire de session | `rusqlite` 0.39 `bundled` (SQLite + FTS5) | Voir §8.14 : SQLite compilé avec le binaire, zéro dépendance système. |
 | Chemins | `directories` | Respect de `XDG_DATA_HOME` / `%APPDATA%` / `~/Library`. |
 | Erreurs | `thiserror` (libs) + `anyhow` (CLI) | Séparation erreurs de bibliothèque / applicatives. |
 | Async | `tokio` | Runtime de `reqwest` et des commandes. |
@@ -268,8 +272,8 @@ opt-level = 3      # voir §8.5 : la vitesse primait sur la taille
 | v1.0 | MVP stable : CLI, docs, CI, releases Linux/macOS/Windows |
 | v1.1 | TUI `ratatui`, classification d'intention, `skills/` |
 | v1.2 | Plugins de recherche web (SearXNG) et d'extraction (Obscura) |
-| v1.2b | Décider si `rig` remplace nos adapters et notre boucle d'agent (voir §8.2) |
-| v1.3 | Mémoire long terme (SQLite + FTS5 ou `sqlite-vec`) |
+| v1.2b | Décider si `rig` remplace nos adapters et notre boucle d'agent (voir §8.2) — **fait : non** |
+| v1.3 | Mémoire long terme (SQLite + FTS5 ou `sqlite-vec`) — **fait** : SQLite + FTS5, JSONL importé (§8.14) |
 | v2.0 | `apc serve` (serveur HTTP local) + application Tauri |
 | v2.1 | Sandboxing avancé (`landlock`/`seatbelt`) ou plugins WASM |
 
@@ -301,15 +305,42 @@ maintenir, et surtout **enferme `apc-traits` dans les types de `rig`** — l'inv
 plugin ». `apc-core` définit ses propres types et `apc-models` les traduit en HTTP. Une centaine de
 lignes de boucle ReAct écrites à la main coûtent moins cher que cette dépendance.
 
-**Réévaluation planifiée (v1.2b).** La décision ci-dessus reste valable pour le MVP, mais `rig` a
-beaucoup bougé depuis (API 0.44+) et couvre désormais ce qui nous manque encore : `Tool` typé avec
-`ToolAnnotations` (de quoi porter le Permission Guard au niveau de l'outil), `AgentRunner` avec
-`max_turns` et `stream()`, `AgentHook` (`on_run_start`, `on_completion_call`, `on_model_select`,
-deltas `TextDelta`/`ReasoningDelta`/`ToolCallDelta`) pour les hooks et la compaction, et des stores
-vectoriels pour la mémoire longue. La tâche kaneo `d6k5r9tql0itnp3c82l5vzfs` tranche : adopter,
-adopter partiellement (un seul crate), ou refuser — avec la taille du binaire et `cargo tree` comme
-mesures, et la contrainte inchangée qu'aucun type de `rig` ne remonte au-dessus de `apc-models` /
-`apc-agent`. Docs : <https://rig.rs/docs>.
+**Réévaluation faite (v1.2b, 2026-11-01) — verdict : refuser.** `rig` (0.46) a été relu dans sa
+source et mesuré sur une résolution réelle (`rig-agent` + `rig-reqwest` + `tokio` dans `/tmp`).
+
+- **Ce qu'il apporte vraiment.** `Tool` typé (`Args`/`Output`/`Error`, `parameters()`,
+  `annotations() -> ToolAnnotations`, `footprint() -> Touches`) ; `AgentRunner` (`.history()`,
+  `.max_turns()`, `.stream()`, `.run_channel()`, reprise d'un `AgentRun`) ; `AgentHook` avec
+  `on_run_start`, `on_completion_call`, `on_model_select`, `on_model_turn_finished`,
+  `on_invalid_tool_call`, les deltas `TextDelta`/`ReasoningDelta`/`ToolCallDelta`, et surtout
+  `on_dispatch -> DispatchAction::Deny(ErrorReport)`, c'est-à-dire le Permission Guard au niveau de
+  la dispatch ; et ~20 clients de providers (`rig-core/src/providers` : anthropic, openai, ollama,
+  deepseek, groq, gemini, mistral, cohere, xai, …) — exactement le trou de §8.10 (Gemini).
+- **Ce qu'il coûte, mesuré.**
+  1. `rust-version = "1.97.1"`, `edition = "2024"` : adopter relève le minimum du projet de 1.80 à
+     1.97.1, contre une promesse écrite (AGENTS.md).
+  2. Le transport par défaut casse le build de release : `rig-reqwest` a `default = ["rustls"]`, et
+     cette feature active `reqwest/rustls`, qui vaut `__rustls-aws-lc-rs` dans `reqwest` 0.13 —
+     précisément ce que `rustls-no-provider` + `ring` évite, sous peine de symboles glibc 2.38 qui
+     ne lient pas sur Ubuntu 22.04 (§8.10). S'en sortir demande `default-features = false` **et** un
+     transport `rig-http` à nous par-dessus notre client `reqwest` : la couche de conversion
+     permanente que cette section refuse. L'adoption partielle coûte donc autant que l'autre.
+  3. `rig-agent` + `rig-reqwest` ajoutent **38 crates** au `Cargo.lock` (`schemars` 1 +
+     `schemars_derive`, `uuid`, `mime_guess`, `ordered-float`, `async-stream`, `tracing-futures`,
+     `ref-cast`, `dyn-clone`, `send_wrapper`, `futures-executor`, `futures-timer`, `glob`,
+     `rand_pcg`, `rig-memory`, …), et `rig-memory` est une dépendance **non optionnelle** de
+     `rig-agent` : un store dont on n'a pas besoin.
+- **Taille du binaire : non mesurée, et c'est un résultat.** Ici les corps de crates arrivent à
+  ~2,8 Ko/s (23 633 o en 8,5 s) et `rig-core` seul en pèse 1 574 837 ; le transport par défaut
+  réclame en plus `aws-lc-sys`, dont le build exige `cmake`, absent de la machine. C'est le mur que
+  §8.10 avait déjà rencontré : la mesure qui tranche est `cargo tree`, pas `ls -lh`, et elle tranche
+  deux fois.
+
+**Conséquence.** `apc-models` et `apc-agent` restent nôtres ; aucun type de `rig` ne remonte au-dessus
+d'eux. Deux choses à garder en tête : `DispatchAction::Deny` est le modèle à copier le jour où des
+hooks entrent dans `apc-agent` (le refus avant exécution, côté boucle et non côté outil), et Gemini
+reste à écrire comme troisième `Dialect` si le besoin apparaît — c'est 3 paragraphes dans `body()`,
+pas une famille de crates.
 
 ### 8.3 Le streaming est dans le trait dès la V1
 
@@ -485,11 +516,43 @@ Conséquences :
 
 ---
 
+### 8.14 La mémoire long terme est SQLite compilé avec le binaire
+
+La v1.3 demandait SQLite + FTS5 (et `sqlite-vec` seulement si des embeddings étaient réellement
+branchés). Ce qui est livré : `apc-memory::SqliteStore` sur
+`ProjectDirs::from("dev","aplix","aplix").data_dir()/memory.db`, trois décisions à noter.
+
+**`rusqlite` 0.39 avec la feature `bundled`.** Le produit promet « aucune dépendance système » et la
+CI construit sur Linux, macOS et Windows ; un `libsqlite3` fourni par l'OS casse cette promesse trois
+fois. `bundled` compile la version amalgamée de SQLite, FTS5 compris (`-DSQLITE_ENABLE_FTS5` dans le
+`build.rs` de `libsqlite3-sys` 0.37), et ne réclame ni `pkg-config` utile ni `cmake`. La version est
+épinglée : la 0.40 a retiré la feature `bundled`, la 0.41 exige Rust 1.89 alors que le minimum déclaré
+est 1.80. Coût mesuré : le binaire release `--no-default-features` passe de 8 147 656 à
+10 054 128 octets, sous le plafond de 15 Mo.
+
+**Le schéma.** `sessions(id TEXT PRIMARY KEY)`, `messages(id INTEGER PRIMARY KEY AUTOINCREMENT,
+session, body)` — `body` porte le `Message` encodé en JSON — et `messages_fts`, une table FTS5
+`content='messages'` tenue à jour par un trigger `AFTER INSERT`. Seule la table `messages` est
+écrite : l'index suit. Une connexion derrière un `Mutex` suffit, la CLI est mono-flux.
+
+**Le JSONL devient un format d'import.** `SqliteStore::new()` importe `sessions/*.jsonl` avant de
+servir : les sessions déjà présentes sont ignorées, les lignes illisibles sont écartées (une écriture
+interrompue laisse une queue déchirée), et les fichiers restent sur place — rien ne supprime les
+données de l'utilisateur. L'import est donc idempotent, et c'est ce qu'un test vérifie.
+
+**`sqlite-vec` est hors périmètre** : aucun embedding n'est calculé dans `apc`, donc une recherche
+vectorielle n'aurait rien à indexer. Le rappel est du FTS5 pur : chaque mot de la requête est cité
+(`"foo" OR "bar"`), le classement vient de `messages_fts.rank`, et `apply_memory` place les trois
+meilleurs résultats des autres sessions en tête du prompt. Une requête sans mot d'au moins trois
+caractères ne renvoie rien, et une erreur du magasin ne fait pas échouer le tour.
+
+---
+
 ## 9. Hors périmètre V1 (explicite)
 
 1. Application Tauri (l'architecture la prépare via `apc serve`, aucun code écrit).
 2. Recherche web (SearXNG) et extraction (Obscura, Firecrawl, Crawl4AI).
-3. Mémoire long terme / knowledge graph : seule la session JSONL existe.
+3. Knowledge graph et distillation de la mémoire : la v1.3 livre SQLite + FTS5, rien de plus.
 4. Chargement dynamique de plugins (`.so`/`.dylib`/WASM) : les traits existent, les plugins V1 sont
    compilés en dur.
 5. Multi-agents : un seul agent.

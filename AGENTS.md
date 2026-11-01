@@ -2,13 +2,13 @@
 
 ## State of the repo (check before assuming anything)
 
-v1.1 is in progress: a Cargo workspace (`crates/*`, 9 crates) whose crates all hold code — `apc-core`
-(config + chat types), `apc-traits` (every trait), `apc-models` (HTTP adapters, SSE), `apc-memory`
-(JSONL sessions), `apc-decision` (heuristic guard + model store), `apc-tools` (file tools + guarded
-shell), `apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli` (`init`, `config`,
-`run`, `chat` (REPL or full-screen view), `model`, `--version`). CI and tagged cross-platform
-releases live in `.github/workflows/`. Hooks and context compaction do **not** exist yet. Read the
-tree before assuming a module exists.
+v1.3 is the current milestone: a Cargo workspace (`crates/*`, 9 crates) whose crates all hold code —
+`apc-core` (config + chat types), `apc-traits` (every trait), `apc-models` (HTTP adapters, SSE),
+`apc-memory` (SQLite sessions with FTS5), `apc-decision` (heuristic guard + model store), `apc-tools`
+(file tools + guarded shell), `apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli`
+(`init`, `config`, `run`, `chat` (REPL or full-screen view), `model`, `--version`). CI and tagged
+cross-platform releases live in `.github/workflows/`. Hooks and context compaction do **not** exist
+yet. Read the tree before assuming a module exists.
 
 ## Sources of truth
 
@@ -40,7 +40,7 @@ apc-agent     agent loop, orchestration only, no I/O
 apc-tools     built-in tools: read_file, write_file, list_dir, run_shell
 apc-decision  Permission Guard: heuristic first, then open-jev (feature-gated)
 apc-models    LLM adapters over direct HTTP + SSE (SPEC §8.10, no `genai`)
-apc-memory    JSONL session store (+ future backends)
+apc-memory    SQLite sessions with FTS5 search (+ JSONL import)
 apc-plugins   static plugin registry (dynamic loading is v1.2)
 apc-cli       the `apc` binary — composition root
 ```
@@ -100,11 +100,18 @@ Kaneo holds one task per milestone, chained by `blocks` relations; ids are in `.
 Before starting one, read its acceptance criteria — they name the traps that bite:
 
 - **v1.2** network tools: an unconfigured tool must not appear in the schema sent to the model.
-- **v1.2b** decides whether `rig` (docs <https://rig.rs/docs>) replaces `apc-models` + `apc-agent`.
-  `rig` is not a dependency today (SPEC §8.2); the task re-opens the decision with `cargo tree` and
-  binary size as the measures. Never let `rig` types rise above `apc-models`/`apc-agent`.
-- **v1.3** long-term memory: `rusqlite` is **not** in this machine's cargo cache, so a task that
-  assumes it will stall at `cargo fetch`.
+- **v1.2b** decided — **refused** (SPEC §8.2). `rig` 0.46 was measured, not just read: MSRV 1.97.1 /
+  edition 2024, `rig-reqwest`'s default `rustls` feature pulls `reqwest/rustls` (`aws-lc-rs`, the
+  Ubuntu 22.04 link wall), `rig-agent` + `rig-reqwest` add 38 crates to `Cargo.lock`, and
+  `rig-memory` is a non-optional dependency of `rig-agent`. The binary-size number could not be
+  taken (crate bodies at ~2.8 KB/s, `aws-lc-sys` needs `cmake`), which is itself the §8.10 story.
+  Never let `rig` types rise above `apc-models`/`apc-agent`; if hooks ever land, copy
+  `DispatchAction::Deny` rather than importing the crate.
+- **v1.3** long-term memory — **done**: `apc-memory` is `SqliteStore` over
+  `memory.db` (FTS5 via `rusqlite` 0.39 `bundled`), and `new()` imports any existing
+  `sessions/*.jsonl` first. `rusqlite` **was** absent from this machine's cargo cache (a ~46 KB/s
+  download, not the 3 KB/s of the rig spike), and 0.40 dropped `bundled` while 0.41 needs Rust 1.89
+  — do not bump without checking both.
 - **v2.0** `apc serve`: axum 0.7 and tauri 2.11 *are* cached; loopback + token, guard over the API.
 - **v2.1** sandboxing: `landlock`, `wasmtime` and `extism` are **not** cached either.
 
@@ -118,7 +125,7 @@ still exists in `main::repl` and must keep working.
 
 - **Dispatch**: `tui::available()` = stdin *and* stdout are terminals. Piped input (every CLI test,
   every script) takes the REPL, so a change to the view must never break `chat_persists_a_session_…`.
-- **One source of truth for history**: each turn reloads the session from `JsonlStore` and persists
+- **One source of truth for history**: each turn reloads the session from `SqliteStore` and persists
   what the agent appended, instead of threading `Vec<Message>` through the view.
 - **The guard runs inside the agent task and blocks.** `TuiApprover` sends the question over a
   `std::sync::mpsc` channel; the render loop polls `try_recv()` every tick and answers on `y`/`n`.
@@ -165,19 +172,29 @@ still exists in `main::repl` and must keep working.
   `obscura_url`-style key without a backend that actually honours it.
 - `reqwest` gained the `query` feature for `.query(&[..])`; that is the only dependency change.
 
-## Session memory (v0.2b)
+## Session memory (v0.2b, SQLite since v1.3)
 
-- `apc-memory::JsonlStore` writes one file per session under
-  `ProjectDirs::from("dev","aplix","aplix").data_dir()/sessions/<id>.jsonl`. Never hardcode
-  `~/.local/share`; the CLI tests point `XDG_DATA_HOME` at their sandbox for exactly this reason.
-- A session id is `{:013}-{:06}` (unix seconds, microseconds), so plain `sort()` on the file names is
+- `apc-memory::SqliteStore` is what the CLI opens: `ProjectDirs::from("dev","aplix","aplix")
+  .data_dir()/memory.db`. Never hardcode `~/.local/share`; the CLI tests point `XDG_DATA_HOME` at
+  their sandbox for exactly this reason.
+- Schema: `sessions(id TEXT PRIMARY KEY)`, `messages(id INTEGER PRIMARY KEY AUTOINCREMENT, session,
+  body)` holding the JSON-encoded `Message`, and `messages_fts`, an FTS5 table over `messages.body`
+  with `content='messages'` kept in step by the `messages_indexed` AFTER INSERT trigger. Adding a
+  message goes through the `messages` table only — the index follows.
+- A session id is `{:013}-{:06}` (unix seconds, microseconds), so `ORDER BY id DESC` is
   chronological and "latest" needs no stat calls.
-- Loading skips lines that do not parse: an interrupted append leaves a torn tail, and losing the
-  conversation over half a line is worse than dropping it. Dropping a *middle* line silently is the
-  accepted cost of that rule.
-- `MemoryStore::load(None)` means "the most recent session". The trait stays async although the
-  implementation uses `std::fs` — the calls are tiny and the CLI is single-flowing.
-- Writes are append-only and flushed per message; a crash mid-turn keeps the user's prompt.
+- `MemoryStore::load(None)` means "the most recent session". `search(query, limit)` returns
+  `Recall { session, snippet }`; the store quotes each word of the query (`"foo" OR "bar"`) and
+  ranks with `messages_fts.rank`. A query with no word of three characters or more returns nothing.
+- `apply_memory` in `apc-cli` puts the three best recalls from **other** sessions in front of the
+  prompt as one system message, merging into an existing one. A store that errors is not fatal: the
+  turn proceeds without recall.
+- `SqliteStore::new()` imports `<data dir>/sessions/*.jsonl` before serving: sessions already in the
+  database are skipped, lines that do not parse are dropped (an interrupted append leaves a torn
+  tail), and the JSONL files are left untouched — nothing deletes user data.
+- One connection behind a `Mutex`; poisoned locks are recovered, because the CLI is
+  single-flowing and a poisoned mutex here means one bad query, not corrupt data.
+- `MemoryStore` stays async although these calls are tiny.
 
 ## Config — the shipped feature
 
@@ -225,6 +242,9 @@ still exists in `main::repl` and must keep working.
   - Cost of the feature (`strip` + `lto`): 7 377 912 B with `--features telemetry` vs 5 914 328 B
     without — the HTTP stack, not Sentry, dominates. Still inside the 15 MB budget, but re-measure
     whenever a dependency is updated.
+  - Measured at v1.3: the release binary without telemetry is 10 054 128 B, up ~1.9 MB from
+    8 147 656 B — bundled SQLite is that cost, and it is the price of the no-system-dependency
+    promise. Still 5.6 MB below the gate.
 - **CI is the contract** (`.github/workflows/ci.yml`): `fmt`, `clippy -D warnings` and `test` in
   **three feature shapes** — default, `--features open-jev`, `--features telemetry` — plus a
   release build on Linux/macOS/Windows with a 15 MB size gate (`wc -c` < 15728640, `apc.exe` on
@@ -255,7 +275,7 @@ cargo build --offline                    # this machine cannot reach crates.io a
 cargo test --workspace
 cargo test -p apc-core config            # single crate / single test (substring match)
 cargo test -p apc-cli --test cli         # CLI end-to-end, incl. a local SSE stub server
-cargo test -p apc-memory                 # session append/load, torn tail
+cargo test -p apc-memory                 # SQLite round trip, FTS5 search, JSONL import, read-only db
 cargo test -p apc-decision               # guard patterns + the resumable model download
 cargo test -p apc-tools                  # path confinement + a refused confirmation runs nothing
 cargo clippy --all-targets -- -D warnings

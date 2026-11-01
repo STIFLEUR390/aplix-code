@@ -14,7 +14,7 @@ crates/
   apc-tools/     built-in tools (fs, shell, web)
   apc-decision/  Permission Guard: heuristic first, then open-jev
   apc-models/    LLM adapters (direct HTTP + SSE)
-  apc-memory/    JSONL session store (+ future backends)
+  apc-memory/    SQLite session store + FTS5 recall (JSONL import)
   apc-plugins/   static plugin registry
   apc-cli/       the `apc` binary — composition root
 skills/          Markdown skill definitions, read as the system prompt (v1.1)
@@ -132,7 +132,7 @@ Still to come: hooks (`PreToolUse`, `PostToolUse`, `Stop`) and context compactio
   tick, scroll }`. One loop per tick: pick up a pending guard question, draw, drain key events, drain
   the agent channel, `sleep(50ms)`.
 - `Event` from the agent task is only `Delta(String)` and `Done(Option<String>)`: history never
-  travels back through the view. `run_turn` reloads the session with `JsonlStore::load(Some(&id))`,
+  travels back through the view. `run_turn` reloads the session with `SqliteStore::load(Some(&id))`,
   appends the prompt, runs the agent, appends what it produced.
 - `TuiApprover(Sender<Ask>)` implements `Approver`; `confirm` blocks on a `std::sync::mpsc` reply
   channel inside the agent task while the render loop shows the question in the footer and answers
@@ -192,20 +192,30 @@ via clap `Args`. No precedence logic there.
 - A 200 response whose body is not an event stream is converted into an error carrying the first
   200 chars — a wrong `base_url` otherwise streams nothing and exits 0.
 
-## Session memory (v0.2b, shipped)
+## Session memory (v0.2b, SQLite since v1.3)
 
-`apc-memory::JsonlStore` implements `MemoryStore`: one JSONL file per session under
-`ProjectDirs::from("dev","aplix","aplix").data_dir()/sessions/`, a `Message` per line
-(`{"role":"user","content":"…"}`), append-only.
+`apc-memory::SqliteStore` implements `MemoryStore` over
+`ProjectDirs::from("dev","aplix","aplix").data_dir()/memory.db`.
 
-- `new_session()` → `{:013}-{:06}` (unix seconds + microseconds): file names sort chronologically, so
-  `latest_session()` is `max()` over `read_dir`, no stat calls.
-- `load(None)` = latest session; `load(Some(id))` = that file; a missing file/dir loads empty.
-- Lines that fail to parse are skipped — a torn append leaves a fragment and must not lose the rest.
+- Schema: `sessions(id TEXT PRIMARY KEY)`, `messages(id INTEGER PRIMARY KEY AUTOINCREMENT, session,
+  body TEXT)` (the JSON-encoded `Message`), and `messages_fts`, an FTS5 table with
+  `content='messages'` fed by the `messages_indexed` AFTER INSERT trigger. Only `messages` is
+  written; the index follows.
+- `new_session()` → `{:013}-{:06}` (unix seconds + microseconds): ids sort chronologically, so
+  `latest_session()` is `ORDER BY id DESC LIMIT 1`, no stat calls.
+- `load(None)` = latest session; `load(Some(id))` = that session; an unknown id loads empty.
+- `search(query, limit) -> Vec<Recall { session, snippet }>`: every word of three characters or more
+  is quoted (`"foo" OR "bar"`), ranked by `messages_fts.rank`, snippet via
+  `snippet(messages_fts,0,'[',']','…',16)`.
+- `apply_memory` (in `apc-cli`) prefixes the three best recalls from *other* sessions to the prompt
+  as one system message; a failing store means no recall, never a failed turn.
+- `SqliteStore::new()` first imports `<data dir>/sessions/*.jsonl`: sessions already present are
+  skipped, unparsable lines dropped, the files left on place. `JsonlStore` survives only as that
+  importer.
 - `apc chat` appends the user turn *before* calling the provider (a crash keeps the prompt) and the
   full assistant reply after the stream ends. `apc run` does not persist anything.
 - `--continue` prints `continuing session <id> (N messages)` to stderr, then replays into context.
-- Long-term memory (schema, forgetting, distillation) is v1.3; the same trait will take it.
+- One `rusqlite::Connection` behind a `Mutex`; poisoned locks are recovered.
 
 ## Telemetry (Sentry)
 
@@ -232,5 +242,5 @@ client; only `apc-cli` does.
 
 ## Post-MVP (do not build during an MVP task)
 
-SearXNG + Obscura plugins (v1.2), SQLite/`sqlite-vec` long-term memory (v1.3), `apc serve` + Tauri
-(v2.0), Landlock/Seatbelt or WASM sandboxing (v2.1), dynamic plugin loading (v1.2).
+`apc serve` + Tauri (v2.0), Landlock/Seatbelt or WASM sandboxing (v2.1), vector recall over past
+sessions (`sqlite-vec`, needs local embeddings), dynamic plugin loading.

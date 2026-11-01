@@ -34,6 +34,10 @@ pub enum Error {
     #[error("{0}")]
     Model(String),
 
+    /// Session memory could not be read or written (`{path}: {source}` from SQLite).
+    #[error("{0}")]
+    Memory(String),
+
     /// The platform exposes no user data directory.
     #[error("cannot locate the user data directory for this platform")]
     NoDataDir,

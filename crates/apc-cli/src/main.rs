@@ -11,7 +11,7 @@ use directories::ProjectDirs;
 
 use apc_core::chat::{ChatEvent, Message, Role};
 use apc_core::config::{self, Layer, Loaded, Source};
-use apc_memory::JsonlStore;
+use apc_memory::SqliteStore;
 use apc_traits::{Approver, DecisionProvider, MemoryStore};
 
 mod telemetry;
@@ -221,7 +221,7 @@ async fn run_prompt(args: &RunArgs) -> Result<()> {
 
 async fn chat(args: &ChatArgs) -> Result<()> {
     let (loaded, _) = resolve(&args.overrides)?;
-    let store = JsonlStore::new()?;
+    let store = SqliteStore::new()?;
     let session = opened_session(&store, args.r#continue).await?;
     let messages = store.load(Some(&session)).await?;
 
@@ -242,7 +242,7 @@ async fn chat(args: &ChatArgs) -> Result<()> {
 }
 
 /// Resumes the latest session or starts a new one.
-async fn opened_session(store: &JsonlStore, resume: bool) -> Result<apc_core::chat::SessionId> {
+async fn opened_session(store: &SqliteStore, resume: bool) -> Result<apc_core::chat::SessionId> {
     if !resume {
         return Ok(store.new_session());
     }
@@ -261,7 +261,7 @@ async fn opened_session(store: &JsonlStore, resume: bool) -> Result<apc_core::ch
 /// The plain stdin/stdout REPL, used whenever the view has no terminal to draw on.
 async fn repl(
     config: config::Config,
-    store: JsonlStore,
+    store: SqliteStore,
     session: apc_core::chat::SessionId,
     mut messages: Vec<Message>,
 ) -> Result<()> {
@@ -284,6 +284,7 @@ async fn repl(
         }
         let question = Message::user(text);
         apply_skill(&mut messages, &root, text);
+        apply_memory(&store, &mut messages, &session, text).await;
         store.append(&session, &question).await?;
         messages.push(question);
 
@@ -319,6 +320,39 @@ fn apply_skill(messages: &mut Vec<Message>, root: &std::path::Path, prompt: &str
     };
     messages.retain(|message| message.role != Role::System);
     messages.insert(0, Message::system(text.trim()));
+}
+
+/// Puts what earlier sessions said about `prompt` in front of it, best match first.
+///
+/// The session being written is left out: its messages are already in the conversation. A store
+/// that cannot answer is not an error here — the turn goes on without recall.
+async fn apply_memory(
+    store: &SqliteStore,
+    messages: &mut Vec<Message>,
+    session: &apc_core::chat::SessionId,
+    prompt: &str,
+) {
+    const LIMIT: usize = 3;
+    let Ok(recalls) = store.search(prompt, LIMIT).await else {
+        return;
+    };
+    let recalls: Vec<_> = recalls
+        .into_iter()
+        .filter(|recall| &recall.session != session)
+        .collect();
+    if recalls.is_empty() {
+        return;
+    }
+    let mut text = String::from("Earlier sessions said (context only, may be irrelevant):\n");
+    for recall in &recalls {
+        text.push_str(&format!("- {}: {}\n", recall.session, recall.snippet));
+    }
+    match messages.first_mut() {
+        Some(first) if first.role == Role::System => {
+            first.content = format!("{text}\n{}", first.content);
+        }
+        _ => messages.insert(0, Message::system(text)),
+    }
 }
 
 /// One agent with the built-in tools and the heuristic guard.

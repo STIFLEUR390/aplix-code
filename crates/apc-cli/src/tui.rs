@@ -12,7 +12,7 @@ use std::time::Duration;
 use anyhow::Result;
 use apc_agent::Agent;
 use apc_core::chat::{ChatEvent, Message, SessionId};
-use apc_memory::JsonlStore;
+use apc_memory::SqliteStore;
 use apc_traits::{Approver, MemoryStore};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Style};
@@ -276,7 +276,7 @@ async fn run_turn(
     tx: UnboundedSender<Event>,
     root: PathBuf,
 ) {
-    let result = match JsonlStore::new() {
+    let result = match SqliteStore::new() {
         Ok(store) => {
             let mut messages = match store.load(Some(&session)).await {
                 Ok(messages) => messages,
@@ -286,6 +286,7 @@ async fn run_turn(
                 }
             };
             super::apply_skill(&mut messages, &root, &prompt.content);
+            super::apply_memory(&store, &mut messages, &session, &prompt.content).await;
             let before = messages.len();
             messages.push(prompt);
             if let Err(error) = store.append(&session, &messages[before]).await {
