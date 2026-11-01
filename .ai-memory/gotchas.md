@@ -174,6 +174,11 @@ the reason is the most likely regression here:
   threshold, so the command ran with **no** confirmation — the guard was off while looking on.
   Fixed in `flat()`: a gap < 0.01 between the top two probabilities is an error, not a low score.
   Any new backend needs the same rule.
+- **There is no ONNX model to download.** local-jev 2.0.0 has no inference dependency (no `ort`,
+  no `candle`) and its `ModelBackbone::from_file` / `NeuralWeights` path is never called — dead code
+  kept alive by its own unit tests. `decide_choice` is trigram/keyword affinity: `no`/`yes` ties at
+  0.5 for everything, and descriptive options (`safe`/`destructive`) score "destructive" 1.0 even
+  for `ls -la`. Don't go hunting for weights; a real neural decision needs a separate runtime.
 - Real local-jev on this machine: `local-jev serve --port 8091` (8080 is Apache), then
   `APC_DECISION_ENDPOINT=http://127.0.0.1:8091` on a binary built with `--features open-jev`.
 

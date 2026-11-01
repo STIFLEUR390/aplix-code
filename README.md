@@ -39,7 +39,7 @@ Every modern coding agent makes hundreds of tiny decisions per session:
 - *"What does the user actually want here — generation, explanation, or review?"*
 - *"Is this 40 KB of context relevant to the question?"*
 
-Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` sends them to a **local decision model** (`open-jev`, a quantized DeBERTa-v3, served on localhost) that answers in **under 20 ms for free**, and only calls the big LLM when it's actually needed. A built-in heuristic answers when that model is not running, so `apc` never waits on it.
+Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answers them **locally, in under 20 ms, for free**, and only calls the big LLM when it's actually needed. Today that is a built-in heuristic guard, which needs no model and never blocks; the target is `open-jev`, a quantized DeBERTa-v3 reached over a local-jev sidecar, with the heuristic kept as the permanent fallback.
 
 | | Traditional CLI agent | **`apc`** |
 | :--- | :---: | :---: |
@@ -53,18 +53,23 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` sends 
 
 ## ✨ Features
 
-### ✅ Planned for `v1.0.0` (MVP)
+### ✅ Working today (`v0.3b`, build from source)
 
 - **`apc run "<prompt>"`** — One-shot agent mode.
 - **`apc chat`** — Interactive REPL in the terminal.
 - **`apc init`** — Generate a commented `apc.toml` config file.
-- **`apc model <cmd>`** — Manage local decision models (`list`, `download`, `status`, `verify`, `remove`).
+- **`apc config`** — Print the effective configuration and which layer supplied each key.
 - **Built-in tools**: `read_file`, `write_file`, `list_dir`, `run_shell`.
-- **Local Permission Guard** — Before any shell command, a local model evaluates its destructiveness (`rm -rf`, `DROP TABLE`, `mkfs`…). Nothing dangerous runs without confirmation.
+- **Local Permission Guard** — Every shell command is scored before it runs (`rm -rf`, `DROP TABLE`, `mkfs`…), and anything above the threshold needs an explicit confirmation. The built-in heuristics need no model at all; building with `--features open-jev` lets a local-jev sidecar answer first and falls back to them on any failure.
 - **Multi-provider support** over the two dialects in use (`/chat/completions` compatible OpenAI, `/messages` Anthropic): OpenAI, Anthropic, Ollama, DeepSeek, OpenRouter, Groq, and any compatible local gateway.
-- **Resumable, verified model downloads** — Interrupted on a train? Just run `apc model download open-jev` again. Picks up where it left off, verifies the SHA-256, and never uses a corrupted file.
 - **Session persistence** — Resume a conversation with `apc chat --continue`.
-- **Cross-platform**: Linux, macOS, Windows.
+- **Opt-in error reporting** — Sentry-compatible, off without a DSN and a config flag.
+
+### 📦 Still planned for `v1.0.0` (MVP)
+
+- **`apc model <cmd>`** — Manage local decision models (`list`, `download`, `status`, `verify`, `remove`), with resumable, SHA-256 verified downloads (v0.4).
+- **Telemetry off by default** in release builds (v0.5).
+- **Cross-platform releases**: Linux, macOS, Windows, plus CI.
 
 ### 🔮 Post-MVP (V1.x – V2)
 
@@ -124,7 +129,7 @@ aplix-code/
 ```rust
 #[async_trait]
 pub trait ModelAdapter: Send + Sync {
-    async fn chat(&self, messages: &[Message], tools: &[Tool]) -> Result<ChatStream>;
+    async fn chat(&self, messages: &[Message], tools: &[ToolSpec]) -> Result<ChatStream>;
 }
 
 #[async_trait]
@@ -133,9 +138,11 @@ pub trait DecisionProvider: Send + Sync {
     async fn choice(&self, state: &str, question: &str, options: &[&str]) -> Result<(String, f64)>;
 }
 
+#[async_trait]
 pub trait Tool: Send + Sync {
-    fn name(&self) -> &'static str;
-    async fn execute(&self, args: serde_json::Value) -> Result<ToolResult>;
+    fn name(&self) -> &str;
+    fn schema(&self) -> serde_json::Value;
+    async fn execute(&self, args: serde_json::Value) -> Result<String>;
 }
 
 pub trait Plugin: Send + Sync {
@@ -166,7 +173,10 @@ cargo build --release
 ./target/release/apc --version
 ```
 
-Requirements: Rust 1.80+, a modern OS. No system dependencies beyond OpenSSL (or `rustls` if you enable the feature).
+Requirements: Rust 1.80+, a modern OS. No system dependencies: TLS is `rustls`, there is no OpenSSL.
+
+While building offline is what this machine needs, `cargo build --offline` is the safe form; the
+`open-jev` decision backend is a separate opt-in feature (`--features open-jev`), see `SPEC.md` §8.11.
 
 ---
 

@@ -83,11 +83,28 @@ these notes as describing current code.
 - Existence checked, no API read needed: `thiserror`, `anyhow`, `sha2`, `toml`, `serde_json`,
   `ratatui`.
 
-## Unverified — remaining
+## Verified — local-jev 2.0.0 (read from the crate source, not docs)
 
-- **`local-jev`** — no reliable docs source. Context7's only match (`/qew7/jev-feels`) failed to
-  fetch and is probably unrelated; do **not** cite it. Unknown: inference backend, asset size,
-  runtime weight. Directly threatens the 15 MB budget → keep it feature-gated.
+Context7's only match (`/qew7/jev-feels`) failed to fetch and is unrelated; the authority here is the
+installed source at `~/.cargo/registry/src/*/local-jev-2.0.0/`. Findings, measured on a real
+`local-jev serve --port 8091`:
+
+- **HTTP contract** (`src/server.rs`, `src/domain.rs`): `POST {base}/v1/systemone/choice` with
+  `{state, question, options: [String], temperature?: f32}` → `{choice, confidence, probabilities:
+  [{option, probability, logit}], latency_ms, cached}`. Also `/score`, `/noul`, `/route`, `/health`,
+  `/metrics`, `/v1/models`.
+- `noul` is a **classification** (`{selected, category, confidence}`), not a yes/no probability, so
+  `DecisionProvider::noul` is emitted as `choice(["no","yes"])`.
+- **No inference engine.** Dependencies are axum/tokio/serde/clap/colored/tracing — no `ort`, no
+  `candle`. `ModelBackbone::from_file` (`src/model.rs`, `NeuralWeights(PathBuf)`) is never called;
+  it is dead code with its own unit tests. `serve` exposes no weights flag.
+- **No discrimination.** `decide_choice` is word/trigram affinity (`compute_option_affinity`,
+  `compute_trigram_similarity`). With `["no","yes"]` every question returns `0.5 / 0.5`; with
+  `["safe","destructive"]` it returns `destructive 1.0` for `ls -la` as well as `rm -rf /`. Therefore:
+  no ONNX artifact to download, and the backend cannot be validated for quality until a real runtime
+  exists. `flat()` in `crates/apc-decision/src/jev.rs` treats the flat answer as no opinion.
+
+## Unverified — remaining
 - **`ratatui` + `crossterm`** — v1.1 only, don't research for an MVP task.
 
 ## Open questions
