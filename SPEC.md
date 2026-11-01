@@ -462,10 +462,17 @@ shell ; il n'existe aucun endpoint HTTP de récupération. Trois voies ont été
 - **`obscura mcp --http`** : contrat réel et `reqwest` suffirait, mais impose de lancer un second
   service et de parler MCP/JSON-RPC depuis l'outil.
 
-La v1.2 livre donc `fetch_page` en `GET` direct (`reqwest`) suivi d'un décodage texte minimal :
-`<script>`/`<style>` retirés, balises aplaties, entités usuelles décodées, et sortie tronquée à
-`tools.fetch_max_bytes` (64 Kio par défaut) sur une frontière de caractère, avec le nombre d'octets
-perdus. Les pages rendues en JavaScript ne sont pas couvertes.
+La v1.2 livre donc `fetch_page` en `GET` direct (`reqwest`) suivi de **`rs-trafilatura` 0.2**, le port
+Rust de trafilatura : classification du type de page, extraction du contenu principal (navigation,
+pieds de page et publicités retirés) et sortie Markdown — les blocs de code des pages de
+documentation survivent, contrairement à un simple aplatissement de balises. Le texte est ensuite
+tronqué à `tools.fetch_max_bytes` (64 Kio par défaut) sur une frontière de caractère, avec le nombre
+d'octets perdus. Les pages rendues en JavaScript ne sont pas couvertes.
+
+Coût mesuré de la dépendance : crate de 229 Ko, graphe déjà présent dans le cache local
+(`dom_query`, `html5ever`), build release `--no-default-features` de 3 939 584 → 8 147 656 octets,
+soit toujours sous le plafond de 15 Mo. En build **debug** la crate écrit des lignes `DEBUG:` sur
+stderr (`cfg!(debug_assertions)`) : le binaire publié, lui, est silencieux.
 
 Conséquences :
 

@@ -164,52 +164,21 @@ impl Tool for FetchPage {
             .bytes()
             .await
             .map_err(|error| Error::Tool(format!("{url}: {error}")))?;
+        let html = String::from_utf8_lossy(&body);
+        let options = rs_trafilatura::Options {
+            output_markdown: true,
+            include_links: false,
+            url: Some(url.clone()),
+            ..rs_trafilatura::Options::default()
+        };
+        let page = rs_trafilatura::extract_with_options(&html, &options)
+            .map_err(|error| Error::Tool(format!("{url}: {error}")))?;
 
         Ok(truncate(
-            &readable(&String::from_utf8_lossy(&body)),
+            &page.content_markdown.unwrap_or(page.content_text),
             self.max_bytes,
         ))
     }
-}
-
-/// Strip markup, `<script>`/`<style>` bodies and the usual entities.
-fn readable(html: &str) -> String {
-    // Lowercased once: ASCII lowering keeps byte offsets, so it can drive the scan.
-    let lower = html.to_ascii_lowercase();
-    let mut text = String::with_capacity(html.len());
-    let mut cursor = 0;
-    while let Some(offset) = lower[cursor..].find('<') {
-        text.push_str(&html[cursor..cursor + offset]);
-        let start = cursor + offset;
-        let Some(length) = lower[start..].find('>') else {
-            break;
-        };
-        let tag = &lower[start + 1..start + length];
-        cursor = start + length + 1;
-        let skip = if tag.starts_with("script") {
-            Some("script")
-        } else if tag.starts_with("style") {
-            Some("style")
-        } else {
-            None
-        };
-        if let Some(name) = skip {
-            if let Some(close) = lower[cursor..].find(&format!("</{name}")) {
-                cursor += close;
-            }
-        }
-        text.push(' ');
-    }
-    text.push_str(&html[cursor.min(html.len())..]);
-
-    let decoded = text
-        .replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'");
-    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Cut `text` at `max` bytes on a char boundary, saying how much was dropped.
@@ -287,9 +256,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fetch_page_keeps_the_text_and_drops_the_markup() {
+    async fn fetch_page_keeps_the_content_and_drops_the_boilerplate() {
         let root = serve(
-            "<html><head><style>body{color:red}</style><script>alert('x')</script></head><body><h1>Hello</h1><p>a &amp; b</p></body></html>",
+            "<html><head><style>body{color:red}</style><script>alert('x')</script></head><body><nav>Home | About</nav><article><h1>Hello</h1><p>a &amp; b</p></article><footer>Copyright</footer></body></html>",
         );
         let tool = FetchPage::new(65_536);
 
@@ -298,12 +267,18 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(out, "Hello a & b");
+        assert!(out.contains("a & b"), "{out}");
+        assert!(!out.contains("alert"), "{out}");
+        assert!(!out.contains("color:red"), "{out}");
+        assert!(!out.contains("Copyright"), "{out}");
+        assert!(!out.contains("Home | About"), "{out}");
     }
 
     #[tokio::test]
     async fn fetch_page_truncates_a_page_too_big_for_the_context() {
-        let body: &'static str = Box::leak("word ".repeat(1000).into_boxed_str());
+        let body: &'static str = Box::leak(
+            format!("<article><p>{}</p></article>", "word ".repeat(1000)).into_boxed_str(),
+        );
         let root = serve(body);
         let tool = FetchPage::new(40);
 
@@ -313,7 +288,8 @@ mod tests {
             .unwrap();
 
         assert!(out.starts_with("word word"), "{out}");
-        assert!(out.ends_with(&format!("[truncated at 40 of {} bytes]", 4999)));
+        assert!(out.contains("[truncated at 40 of "), "{out}");
+        assert!(out.len() < 100, "{out}");
     }
 
     #[tokio::test]

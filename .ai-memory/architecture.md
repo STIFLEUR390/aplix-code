@@ -101,7 +101,8 @@ Still to come: hooks (`PreToolUse`, `PostToolUse`, `Stop`) and context compactio
 ## Built-in tools (v0.3, shipped)
 
 `crates/apc-tools/src/lib.rs`: `ReadFile`, `WriteFile`, `ListDir`, `RunShell`;
-`crates/apc-tools/src/web.rs`: `WebSearch` (SearXNG) and `FetchPage` (plain HTTP, `SPEC.md` §8.13).
+`crates/apc-tools/src/web.rs`: `WebSearch` (SearXNG) and `FetchPage` (plain HTTP +
+`rs-trafilatura` for main-content Markdown, `SPEC.md` §8.13).
 `apc_plugins::default_tools` omits `web_search` when `tools.searxng_url` is unset.
 
 - Paths resolve lexically under the working directory; absolute paths and `..` above the root are

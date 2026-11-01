@@ -145,8 +145,13 @@ still exists in `main::repl` and must keep working.
 
 - `crates/apc-tools/src/web.rs` holds `WebSearch` (SearXNG, `GET {base}/search?q=…&format=json` →
   `results[].title/url/content`, 5 results by default, 10 max) and `FetchPage` (plain `reqwest`
-  `GET`, then `readable()` strips `<script>`/`<style>` and markup, `truncate()` cuts on a char
-  boundary and says how many bytes were dropped).
+  `GET`, then `rs-trafilatura` extracts the main content as Markdown, and `truncate()` cuts on a
+  char boundary saying how many bytes were dropped). Use the crate rather than a hand-rolled tag
+  stripper: it keeps code fences and drops nav/footer, which a stripper cannot.
+- `rs-trafilatura` costs ~4.2 MB of release binary (3.9 → 8.1 MB) because it embeds its XGBoost page
+  classifier; the 15 MB gate still holds, but re-measure before adding another model-bearing crate.
+  In **debug** builds it prints `DEBUG:` lines on stderr (`cfg!(debug_assertions)`); release is
+  silent, so don't "fix" those prints.
 - **Both are config-gated, in different ways.** `tools.searxng_url` unset (`APC_SEARXNG_URL`) means
   `web_search` is not built at all — an unconfigured tool must never reach the schema the model is
   offered, and `crates/apc-cli/tests/cli.rs::an_unconfigured_search_tool_is_never_offered_to_the_model`

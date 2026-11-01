@@ -61,7 +61,8 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
   Permission Guard prompt in the status bar; falls back to a plain REPL when stdin/stdout is piped.
 - **`apc init`** — Generate a commented `apc.toml` config file.
 - **`apc config`** — Print the effective configuration and which layer supplied each key.
-- **Built-in tools**: `read_file`, `write_file`, `list_dir`, `run_shell`, `fetch_page`.
+- **Built-in tools**: `read_file`, `write_file`, `list_dir`, `run_shell`, `fetch_page` (main-content
+  extraction as Markdown via `rs-trafilatura`, boilerplate dropped).
 - **Private web search** — `web_search` goes through your own SearXNG instance
   (`tools.searxng_url` / `APC_SEARXNG_URL`); without one the tool is not registered at all, so the
   model is never offered a tool that cannot answer.

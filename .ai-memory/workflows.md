@@ -21,7 +21,7 @@
 | v0.5 | Opt-in telemetry: `tracing` logs + Sentry, off by default — **done** |
 | v1.0 | MVP: CI (`fmt`, clippy ×3 shapes, tests, size gate) + tagged releases Linux/macOS/Windows — **done** ; télémetrie compilée uniquement sur `--features telemetry` — **done** |
 | v1.1 | TUI `ratatui` (transcript + streaming + guard in the footer), classification d'intention heuristique, `skills/` chargés comme prompt système — **done** |
-| v1.2 | Outils web : `web_search` (SearXNG) + `fetch_page` (HTTP simple, pas Obscura — SPEC §8.13) — **done** ; chargement dynamique de plugins reste hors périmètre (SPEC §8.7) |
+| v1.2 | Outils web : `web_search` (SearXNG) + `fetch_page` (HTTP simple + `rs-trafilatura`, pas Obscura — SPEC §8.13) — **done** ; chargement dynamique de plugins reste hors périmètre (SPEC §8.7) |
 | v1.2b | Décider si `rig` remplace les adapters + la boucle d'agent — kaneo `d6k5r9tql0itnp3c82l5vzfs` (due 2027-04-12) |
 | v1.3 | Long-term memory (SQLite + FTS5 / `sqlite-vec`) — kaneo `o47602h7odoky3hbjckrvrr9` (due 2027-04-26) |
 | v2.0 | `apc serve` (axum) + Tauri client — kaneo `rfqlho1w48tayi2h8n0u4oey` (due 2027-05-24) |
