@@ -2,12 +2,13 @@
 
 ## State of the repo (check before assuming anything)
 
-v0.4 exists: a Cargo workspace (`crates/*`, 9 crates) and all nine hold code — `apc-core`
+v1.0 exists: a Cargo workspace (`crates/*`, 9 crates) whose crates all hold code — `apc-core`
 (config + chat types), `apc-traits` (every trait), `apc-models` (HTTP adapters, SSE), `apc-memory`
 (JSONL sessions), `apc-decision` (heuristic guard + model store), `apc-tools` (file tools + guarded
 shell), `apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli` (`init`, `config`,
-`run`, `chat`, `model`, `--version`). Hooks and `skills/` do **not** exist yet, and there is no CI.
-Read the tree before assuming a module exists.
+`run`, `chat`, `model`, `--version`). CI and tagged cross-platform releases live in
+`.github/workflows/`. Hooks, context compaction, intent classification and `skills/` do **not** exist
+yet. Read the tree before assuming a module exists.
 
 ## Sources of truth
 
@@ -148,6 +149,15 @@ dependency to `apc-agent` or `apc-cli`.
   - Cost of the feature (v0.5, `strip` + `lto`): 7 377 912 B with Sentry + `tracing` vs 5 643 912 B
     with `--no-default-features` — the HTTP stack, not Sentry, dominates. Still inside the 15 MB
     budget, but re-measure whenever a dependency is updated.
+- **CI is the contract** (`.github/workflows/ci.yml`): `fmt`, `clippy -D warnings` and `test` in
+  **three feature shapes** — default, `--features open-jev`, `--no-default-features` — plus a
+  release build on Linux/macOS/Windows with a 15 MB size gate (`wc -c` < 15728640, `apc.exe` on
+  Windows). Reproduce a failure with the same shape locally before pushing; a shape you did not
+  run is a shape that can fail in CI.
+- **Release artifacts are built `--no-default-features`** (`.github/workflows/release.yml`, tags
+  `v*`): published binaries contain no Sentry code, so no event can leave a release even with
+  `SENTRY_DSN` set. The `telemetry` feature stays a *dev* default; flipping `default = []` belongs
+  to the release task `ykajrzj02vow3xnfvd9s1rv1`.
 - **`#![forbid(unsafe_code)]` in every crate, no exception** in V1 (SPEC §8.8).
 - **Binary < 15 MB**, models downloaded on demand (resumable + SHA-256 verified), never bundled.
   Release profile: `lto`, `codegen-units = 1`, `strip = "symbols"`, `panic = "abort"`,

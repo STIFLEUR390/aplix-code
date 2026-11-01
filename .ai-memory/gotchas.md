@@ -95,6 +95,10 @@
   explicitly captured errors leave a release binary.
 - Never call `sentry::init(())` — the no-argument form reads ambient `SENTRY_DSN` and arms telemetry
   behind the config gate's back. `sentry::init((dsn, options))` keeps the gate explicit.
+- Release artifacts are built `--no-default-features` in CI, but a *local* `cargo build --release`
+  still compiles Sentry (the feature is a dev default). Test the shipped shape explicitly, and
+  remember that `target/debug/apc` can end up being the no-telemetry build after a
+  `cargo test --no-default-features` — run `cargo build -p apc-cli` before blaming Sentry wiring.
 - The fmt layer is built with `with_target(false)` and no per-crate filter, so `APC_LOG=debug` also
   prints hyper/reqwest internals (`connecting to …`, `pooling idle connection`). Filtering needs
   `tracing-subscriber`'s `env-filter`/`Targets`; not worth it until the noise actually hurts.

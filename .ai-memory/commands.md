@@ -40,9 +40,27 @@ cargo build --offline --no-default-features               # telemetry off
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --workspace
-ls -lh target/release/apc             # must stay under 15 MB (7.38 MB at v0.5, 5.64 MB with
+ls -lh target/release/apc             # must stay under 15 MB (7.38 MB with Sentry, 5.64 MB with
                                       # --no-default-features; reqwest+tokio dominate, not Sentry)
 ```
+
+## CI and releases
+
+```bash
+# exactly what .github/workflows/ci.yml runs (three feature shapes)
+for f in "" "--features open-jev" "--no-default-features"; do
+  cargo clippy --offline --all-targets $f -- -D warnings && cargo test --offline --workspace $f
+done
+
+# the size gate, locally
+size=$(wc -c < target/release/apc); test "$size" -lt 15728640 && echo "ok: $size"
+
+# publish: a tag builds Linux/macOS/Windows and creates the GitHub release
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+Release artifacts are built with `--no-default-features`, so no Sentry code ships. The local
+`dist/` folder from a dry run of the packaging step is git-ignored.
 
 ## Single test / single crate
 

@@ -5,6 +5,7 @@
 **A local-first, plugin-driven coding agent for your terminal.**
 
 [![Status](https://img.shields.io/badge/status-work%20in%20progress-orange?style=flat-square)](https://github.com/STIFLEUR390/aplix-code)
+[![CI](https://github.com/STIFLEUR390/aplix-code/actions/workflows/ci.yml/badge.svg)](https://github.com/STIFLEUR390/aplix-code/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange?style=flat-square&logo=rust)](https://www.rust-lang.org)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](https://github.com/STIFLEUR390/aplix-code/pulls)
@@ -53,7 +54,7 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ## ✨ Features
 
-### ✅ Working today (`v0.3b`, build from source)
+### ✅ Working today (`v1.0`)
 
 - **`apc run "<prompt>"`** — One-shot agent mode.
 - **`apc chat`** — Interactive REPL in the terminal.
@@ -64,12 +65,12 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 - **Multi-provider support** over the two dialects in use (`/chat/completions` compatible OpenAI, `/messages` Anthropic): OpenAI, Anthropic, Ollama, DeepSeek, OpenRouter, Groq, and any compatible local gateway.
 - **Session persistence** — Resume a conversation with `apc chat --continue`.
 - **Opt-in error reporting** — Sentry-compatible, off without a DSN and a config flag.
-
-### 📦 Still planned for `v1.0.0` (MVP)
-
 - **`apc model <cmd>`** — Manage local decision models (`list`, `download`, `status`, `verify`, `remove`), with resumable, SHA-256 verified downloads. The catalog is empty for now: no upstream artifact exists (`SPEC.md` §8.12).
-- **Telemetry off by default** in release builds (v0.5).
-- **Cross-platform releases**: Linux, macOS, Windows, plus CI.
+- **CI and releases** — `fmt`, `clippy -D warnings` and tests in three feature shapes on every push, a 15 MB size gate, and tagged builds for Linux, macOS and Windows.
+
+### 📦 Still planned
+
+- **Telemetry out of the default feature set** — the release binaries are already built without it; flipping `default = []` ships with the release task (`SPEC.md` §3.4).
 
 ### 🔮 Post-MVP (V1.x – V2)
 
@@ -86,13 +87,16 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ## 🚀 Quick start
 
-> **Note:** `apc` is not yet on crates.io, so install it from source today.
+> **Note:** `apc` is not yet on crates.io. Use a release binary, or install from source.
 
 ```bash
-# Install (Rust 1.80+)
+# Option A — prebuilt binary: https://github.com/STIFLEUR390/aplix-code/releases
+#   apc-Linux-X64.tar.gz, apc-macOS-ARM64.tar.gz, apc-Windows-X64.zip (+ .sha256)
+
+# Option B — from source (Rust 1.80+)
 git clone https://github.com/STIFLEUR390/aplix-code.git
 cd aplix-code
-cargo install --path crates/apc-cli --offline --locked
+cargo install --path crates/apc-cli --locked   # add --offline once the crates are cached
 
 # Configure any OpenAI-compatible provider
 export OPENAI_API_KEY="sk-..."
@@ -104,7 +108,8 @@ apc config        # every value, and which layer supplied it
 apc run "Add a progress bar to the TUI in src/ui.rs"
 ```
 
-Once it is published, the install is `cargo install aplix-code`. `apc model` ships today but its
+Once it is published, the install is `cargo install aplix-code`. Published binaries are built with
+`--no-default-features`, so they carry no Sentry code at all. `apc model` ships today but its
 catalog is empty — there is no decision-model artifact upstream yet (`SPEC.md` §8.12). A local-jev
 sidecar can still refine the guard: build with `--features open-jev` and set `decision.endpoint`
 (see `SPEC.md` §8.11).
@@ -197,7 +202,7 @@ While building offline is what this machine needs, `cargo build --offline` is th
 | **v0.3b** | `open-jev` backend behind a feature flag, fail-open to the heuristics |
 | **v0.4** | `apc model` subcommand + resumable, verified downloads |
 | **v0.5** | Opt-in telemetry: local `tracing` logs + Sentry, off by default |
-| **v1.0** | MVP: stable CLI, docs, CI, releases for Linux/macOS/Windows |
+| **v1.0** | MVP: stable CLI, docs, CI and release artifacts for Linux/macOS/Windows |
 | **v1.1** | `ratatui`-based TUI, intent classification, `skills/` |
 | **v1.2** | SearXNG + Obscura plugins |
 | **v1.3** | Long-term memory (SQLite + FTS5 / `sqlite-vec`) |

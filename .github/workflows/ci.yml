@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # 15 MB, the budget from SPEC.md §3.2.
+  MAX_BYTES: 15728640
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --features open-jev -- -D warnings
+      - run: cargo clippy --all-targets --no-default-features -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo test --workspace --features open-jev
+      - run: cargo test --workspace --no-default-features
+
+  size:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Release artifacts ship without the telemetry feature (SPEC.md §3.4).
+      - run: cargo build --release --locked --no-default-features
+      - shell: bash
+        run: |
+          binary=target/release/apc
+          [ -f "$binary" ] || binary="$binary.exe"
+          size=$(wc -c < "$binary")
+          echo "$binary: $size bytes (budget $MAX_BYTES)"
+          test "$size" -lt "$MAX_BYTES"
