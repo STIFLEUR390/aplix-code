@@ -10,8 +10,9 @@ mod sse;
 use std::collections::VecDeque;
 use std::pin::Pin;
 
-use apc_core::chat::{ChatEvent, ChatStream, Message, Role};
+use apc_core::chat::{ChatEvent, ChatStream, Message, Role, ToolCall};
 use apc_core::config::Provider;
+use apc_core::tool::ToolSpec;
 use apc_core::{Error, Result};
 use apc_traits::ModelAdapter;
 use futures_util::stream::{self, Stream, StreamExt};
@@ -135,12 +136,12 @@ impl Http {
 
 #[async_trait::async_trait]
 impl ModelAdapter for Http {
-    async fn chat(&self, messages: &[Message]) -> Result<ChatStream> {
+    async fn chat(&self, messages: &[Message], tools: &[ToolSpec]) -> Result<ChatStream> {
         let request = self
             .client
             .post(self.endpoint())
             .header("accept", "text/event-stream")
-            .json(&body(self.dialect, &self.model, messages));
+            .json(&body(self.dialect, &self.model, messages, tools));
 
         let request = match (self.dialect, &self.key) {
             (Dialect::OpenAi, Some(key)) => request.bearer_auth(key),
@@ -189,21 +190,32 @@ impl ModelAdapter for Http {
 }
 
 /// Request body for one dialect.
-fn body(dialect: Dialect, model: &str, messages: &[Message]) -> Value {
-    let conversation = |filter: fn(&Message) -> bool| -> Vec<Value> {
-        messages
-            .iter()
-            .filter(|message| filter(message))
-            .map(|message| json!({ "role": message.role.as_str(), "content": message.content }))
-            .collect()
-    };
-
+fn body(dialect: Dialect, model: &str, messages: &[Message], tools: &[ToolSpec]) -> Value {
     match dialect {
-        Dialect::OpenAi => json!({
-            "model": model,
-            "stream": true,
-            "messages": conversation(|_| true),
-        }),
+        Dialect::OpenAi => {
+            let mut body = json!({
+                "model": model,
+                "stream": true,
+                "messages": messages.iter().map(openai_message).collect::<Vec<_>>(),
+            });
+            if !tools.is_empty() {
+                body["tools"] = tools
+                    .iter()
+                    .map(|tool| {
+                        json!({
+                            "type": "function",
+                            "function": {
+                                "name": tool.name,
+                                "description": tool.description,
+                                "parameters": tool.parameters,
+                            },
+                        })
+                    })
+                    .collect();
+                body["tool_choice"] = json!("auto");
+            }
+            body
+        }
         Dialect::Anthropic => {
             // Anthropic takes the system prompt as a top-level field, not a message.
             let system = messages
@@ -216,71 +228,224 @@ fn body(dialect: Dialect, model: &str, messages: &[Message]) -> Value {
                 "model": model,
                 "max_tokens": MAX_TOKENS,
                 "stream": true,
-                "messages": conversation(|message| message.role != Role::System),
+                "messages": messages
+                    .iter()
+                    .filter(|message| message.role != Role::System)
+                    .map(anthropic_message)
+                    .collect::<Vec<_>>(),
             });
             if !system.is_empty() {
                 body["system"] = json!(system);
+            }
+            if !tools.is_empty() {
+                body["tools"] = tools
+                    .iter()
+                    .map(|tool| {
+                        json!({
+                            "name": tool.name,
+                            "description": tool.description,
+                            "input_schema": tool.parameters,
+                        })
+                    })
+                    .collect();
             }
             body
         }
     }
 }
 
+/// Arguments as an object; a streamed fragment can leave them invalid.
+fn arguments_object(arguments: &str) -> Value {
+    serde_json::from_str(arguments).unwrap_or_else(|_| json!({}))
+}
+
+fn openai_message(message: &Message) -> Value {
+    if message.role == Role::Tool {
+        return json!({
+            "role": "tool",
+            "tool_call_id": message.tool_call_id,
+            "content": message.content,
+        });
+    }
+    if message.tool_calls.is_empty() {
+        return json!({ "role": message.role.as_str(), "content": message.content });
+    }
+    json!({
+        "role": message.role.as_str(),
+        "content": message.content,
+        "tool_calls": message
+            .tool_calls
+            .iter()
+            .map(|call| {
+                json!({
+                    "id": call.id,
+                    "type": "function",
+                    "function": { "name": call.name, "arguments": call.arguments },
+                })
+            })
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn anthropic_message(message: &Message) -> Value {
+    if message.role == Role::Tool {
+        return json!({
+            "role": "user",
+            "content": [{
+                "type": "tool_result",
+                "tool_use_id": message.tool_call_id,
+                "content": message.content,
+            }],
+        });
+    }
+    if message.tool_calls.is_empty() {
+        return json!({ "role": message.role.as_str(), "content": message.content });
+    }
+    let mut blocks = Vec::new();
+    if !message.content.is_empty() {
+        blocks.push(json!({ "type": "text", "text": message.content }));
+    }
+    blocks.extend(message.tool_calls.iter().map(|call| {
+        json!({
+            "type": "tool_use",
+            "id": call.id,
+            "name": call.name,
+            "input": arguments_object(&call.arguments),
+        })
+    }));
+    json!({ "role": "assistant", "content": blocks })
+}
+
 impl Dialect {
-    /// Turn one SSE payload into a step, or `None` for bookkeeping events.
-    fn event(self, payload: &str) -> Result<Option<ChatEvent>> {
+    /// Read one SSE payload: the events it carries, and whether the turn is over.
+    ///
+    /// Tool calls arrive in fragments, so they accumulate in `calls` and are emitted whole.
+    fn absorb(self, payload: &str, calls: &mut Vec<ToolCall>) -> Result<(Vec<ChatEvent>, bool)> {
+        let mut events = Vec::new();
         if payload == "[DONE]" {
-            return Ok(Some(ChatEvent::Done));
+            events.extend(drain_calls(calls));
+            return Ok((events, true));
         }
         let value: Value = serde_json::from_str(payload)
             .map_err(|error| Error::Provider(format!("unreadable event `{payload}`: {error}")))?;
 
-        let text = |value: &Value| {
-            value
-                .as_str()
-                .filter(|text| !text.is_empty())
-                .map(|text| ChatEvent::Delta(text.to_owned()))
-        };
-
-        Ok(match self {
-            Dialect::OpenAi => value["choices"]
-                .get(0)
-                .and_then(|choice| text(&choice["delta"]["content"])),
+        match self {
+            Dialect::OpenAi => {
+                let choice = &value["choices"][0];
+                if let Some(text) = choice["delta"]["content"].as_str() {
+                    if !text.is_empty() {
+                        events.push(ChatEvent::Delta(text.to_owned()));
+                    }
+                }
+                if let Some(fragments) = choice["delta"]["tool_calls"].as_array() {
+                    for fragment in fragments {
+                        let index = fragment["index"].as_u64().unwrap_or(0) as usize;
+                        while calls.len() <= index {
+                            calls.push(ToolCall {
+                                id: String::new(),
+                                name: String::new(),
+                                arguments: String::new(),
+                            });
+                        }
+                        let call = &mut calls[index];
+                        if let Some(id) = fragment["id"].as_str() {
+                            call.id = id.to_owned();
+                        }
+                        if let Some(name) = fragment["function"]["name"].as_str() {
+                            call.name.push_str(name);
+                        }
+                        if let Some(arguments) = fragment["function"]["arguments"].as_str() {
+                            call.arguments.push_str(arguments);
+                        }
+                    }
+                }
+                if choice["finish_reason"].as_str() == Some("tool_calls") {
+                    events.extend(drain_calls(calls));
+                }
+            }
             Dialect::Anthropic => match value["type"].as_str() {
-                Some("content_block_delta") => text(&value["delta"]["text"]),
-                Some("message_stop") => Some(ChatEvent::Done),
+                Some("content_block_start") => {
+                    if value["content_block"]["type"].as_str() == Some("tool_use") {
+                        calls.push(ToolCall {
+                            id: value["content_block"]["id"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_owned(),
+                            name: value["content_block"]["name"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_owned(),
+                            arguments: String::new(),
+                        });
+                    }
+                }
+                Some("content_block_delta") => match value["delta"]["type"].as_str() {
+                    Some("input_json_delta") => {
+                        if let (Some(call), Some(fragment)) =
+                            (calls.last_mut(), value["delta"]["partial_json"].as_str())
+                        {
+                            call.arguments.push_str(fragment);
+                        }
+                    }
+                    Some("text_delta") => {
+                        if let Some(text) = value["delta"]["text"]
+                            .as_str()
+                            .filter(|text| !text.is_empty())
+                        {
+                            events.push(ChatEvent::Delta(text.to_owned()));
+                        }
+                    }
+                    _ => {}
+                },
+                Some("message_stop") => {
+                    events.extend(drain_calls(calls));
+                    return Ok((events, true));
+                }
                 Some("error") => {
                     let message = value["error"]["message"].as_str().unwrap_or(payload);
                     return Err(Error::Provider(message.to_owned()));
                 }
-                _ => None,
+                _ => {}
             },
-        })
+        }
+        Ok((events, false))
     }
+}
+
+fn drain_calls(calls: &mut Vec<ToolCall>) -> Vec<ChatEvent> {
+    calls
+        .drain(..)
+        .filter(|call| !call.name.is_empty())
+        .map(ChatEvent::ToolCall)
+        .collect()
 }
 
 /// Re-shape the HTTP body stream into `ChatEvent`s.
 ///
-/// A server that closes without `[DONE]` still ends with exactly one `Done`.
+/// A server that closes without `[DONE]` still ends with exactly one `Done`, after any tool calls.
 fn stream_from(response: reqwest::Response, dialect: Dialect) -> ChatStream {
     type Body = Pin<Box<dyn Stream<Item = reqwest::Result<bytes::Bytes>> + Send>>;
     let source: Body = Box::pin(response.bytes_stream());
-    let state = (source, Sse::default(), VecDeque::new());
+    let state = (source, Sse::default(), VecDeque::new(), Vec::new());
 
     Box::pin(stream::unfold(Some(state), move |state| async move {
-        let (mut source, mut sse, mut pending) = state?;
+        let (mut source, mut sse, mut pending, mut calls) = state?;
         loop {
             if let Some(event) = pending.pop_front() {
                 let last = event == ChatEvent::Done;
-                let state = (!last).then_some((source, sse, pending));
+                let state = (!last).then_some((source, sse, pending, calls));
                 return Some((Ok(event), state));
             }
             match source.next().await {
                 Some(Ok(chunk)) => {
                     for payload in sse.push(&String::from_utf8_lossy(&chunk)) {
-                        match dialect.event(&payload) {
-                            Ok(Some(event)) => pending.push_back(event),
-                            Ok(None) => {}
+                        match dialect.absorb(&payload, &mut calls) {
+                            Ok((events, done)) => {
+                                pending.extend(events);
+                                if done {
+                                    pending.push_back(ChatEvent::Done);
+                                }
+                            }
                             Err(error) => return Some((Err(error), None)),
                         }
                     }
@@ -291,7 +456,10 @@ fn stream_from(response: reqwest::Response, dialect: Dialect) -> ChatStream {
                         None,
                     ))
                 }
-                None => return Some((Ok(ChatEvent::Done), None)),
+                None => {
+                    pending.extend(drain_calls(&mut calls));
+                    pending.push_back(ChatEvent::Done);
+                }
             }
         }
     }))
@@ -309,42 +477,98 @@ fn truncate(text: &str, limit: usize) -> String {
 mod tests {
     use super::*;
 
+    fn events(dialect: Dialect, payload: &str) -> (Vec<ChatEvent>, bool) {
+        let mut calls = Vec::new();
+        dialect.absorb(payload, &mut calls).expect("parses")
+    }
+
     #[test]
     fn openai_body_carries_the_whole_conversation() {
         let messages = [Message::system("be brief"), Message::user("hi")];
-        let body = body(Dialect::OpenAi, "auto", &messages);
+        let body = body(Dialect::OpenAi, "auto", &messages, &[]);
         assert_eq!(body["model"], "auto");
         assert_eq!(body["stream"], true);
         assert_eq!(body["messages"][0]["role"], "system");
         assert_eq!(body["messages"][1]["content"], "hi");
+        assert!(body.get("tools").is_none());
     }
 
     #[test]
     fn anthropic_body_hoists_the_system_prompt() {
         let messages = [Message::system("be brief"), Message::user("hi")];
-        let body = body(Dialect::Anthropic, "claude", &messages);
+        let body = body(Dialect::Anthropic, "claude", &messages, &[]);
         assert_eq!(body["system"], "be brief");
         assert_eq!(body["messages"].as_array().map(Vec::len), Some(1));
         assert_eq!(body["max_tokens"], MAX_TOKENS);
     }
 
     #[test]
+    fn tools_are_offered_in_the_dialect_shape() {
+        let tool = ToolSpec {
+            name: "read_file".to_owned(),
+            description: "read".to_owned(),
+            parameters: json!({ "type": "object" }),
+        };
+        let openai = body(
+            Dialect::OpenAi,
+            "auto",
+            &[Message::user("hi")],
+            std::slice::from_ref(&tool),
+        );
+        assert_eq!(openai["tools"][0]["function"]["name"], "read_file");
+        assert_eq!(openai["tool_choice"], "auto");
+        let anthropic = body(
+            Dialect::Anthropic,
+            "claude",
+            &[Message::user("hi")],
+            &[tool],
+        );
+        assert_eq!(anthropic["tools"][0]["input_schema"]["type"], "object");
+    }
+
+    #[test]
     fn openai_events_become_deltas() {
-        let payload = r#"{"choices":[{"delta":{"content":"hel"}}]}"#;
         assert_eq!(
-            Dialect::OpenAi.event(payload).expect("parses"),
-            Some(ChatEvent::Delta("hel".to_owned()))
+            events(
+                Dialect::OpenAi,
+                r#"{"choices":[{"delta":{"content":"hel"}}]}"#
+            )
+            .0,
+            vec![ChatEvent::Delta("hel".to_owned())]
         );
         // Role-only and empty deltas are bookkeeping.
+        assert!(events(
+            Dialect::OpenAi,
+            r#"{"choices":[{"delta":{"role":"assistant"}}]}"#
+        )
+        .0
+        .is_empty());
+        assert!(events(Dialect::OpenAi, "[DONE]").1);
+    }
+
+    #[test]
+    fn openai_tool_call_fragments_become_one_call() {
+        let mut calls = Vec::new();
+        let (first, done) = Dialect::OpenAi
+            .absorb(
+                r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"read_file","arguments":"{\"pa"}}]}}]}"#,
+                &mut calls,
+            )
+            .expect("parses");
+        assert!(first.is_empty() && !done);
+        let (second, _) = Dialect::OpenAi
+            .absorb(
+                r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"th\":\"Cargo.toml\"}"}}]},"finish_reason":"tool_calls"}]}"#,
+                &mut calls,
+            )
+            .expect("parses");
         assert_eq!(
-            Dialect::OpenAi
-                .event(r#"{"choices":[{"delta":{"role":"assistant"}}]}"#)
-                .expect("parses"),
-            None
-        );
-        assert_eq!(
-            Dialect::OpenAi.event("[DONE]").expect("parses"),
-            Some(ChatEvent::Done)
+            second,
+            vec![ChatEvent::ToolCall(ToolCall {
+                id: "call_1".to_owned(),
+                name: "read_file".to_owned(),
+                arguments: r#"{"path":"Cargo.toml"}"#.to_owned(),
+            })]
         );
     }
 
@@ -352,27 +576,53 @@ mod tests {
     fn anthropic_events_become_deltas() {
         let delta = r#"{"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}"#;
         assert_eq!(
-            Dialect::Anthropic.event(delta).expect("parses"),
-            Some(ChatEvent::Delta("hi".to_owned()))
+            events(Dialect::Anthropic, delta).0,
+            vec![ChatEvent::Delta("hi".to_owned())]
         );
+        assert!(events(Dialect::Anthropic, r#"{"type":"message_stop"}"#).1);
+        assert!(events(Dialect::Anthropic, r#"{"type":"ping"}"#)
+            .0
+            .is_empty());
+    }
+
+    #[test]
+    fn anthropic_tool_use_accumulates_its_json() {
+        let mut calls = Vec::new();
+        Dialect::Anthropic
+            .absorb(
+                r#"{"type":"content_block_start","content_block":{"type":"tool_use","id":"toolu_1","name":"list_dir"}}"#,
+                &mut calls,
+            )
+            .expect("parses");
+        let (events, _) = Dialect::Anthropic
+            .absorb(
+                r#"{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{}"},"index":1}"#,
+                &mut calls,
+            )
+            .expect("parses");
+        assert!(events.is_empty());
+        let (done, finished) = Dialect::Anthropic
+            .absorb(r#"{"type":"message_stop"}"#, &mut calls)
+            .expect("parses");
+        assert!(finished);
         assert_eq!(
-            Dialect::Anthropic
-                .event(r#"{"type":"message_stop"}"#)
-                .expect("parses"),
-            Some(ChatEvent::Done)
-        );
-        assert_eq!(
-            Dialect::Anthropic
-                .event(r#"{"type":"ping"}"#)
-                .expect("parses"),
-            None
+            done,
+            vec![ChatEvent::ToolCall(ToolCall {
+                id: "toolu_1".to_owned(),
+                name: "list_dir".to_owned(),
+                arguments: "{}".to_owned(),
+            })]
         );
     }
 
     #[test]
     fn an_anthropic_error_event_is_an_error() {
+        let mut calls = Vec::new();
         let error = Dialect::Anthropic
-            .event(r#"{"type":"error","error":{"message":"overloaded"}}"#)
+            .absorb(
+                r#"{"type":"error","error":{"message":"overloaded"}}"#,
+                &mut calls,
+            )
             .expect_err("reports");
         assert!(error.to_string().contains("overloaded"), "{error}");
     }

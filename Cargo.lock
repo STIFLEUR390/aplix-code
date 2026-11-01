@@ -94,14 +94,24 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "apc-agent"
 version = "0.1.0"
+dependencies = [
+ "apc-core",
+ "apc-traits",
+ "futures-util",
+ "serde_json",
+]
 
 [[package]]
 name = "apc-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "apc-agent",
  "apc-core",
+ "apc-decision",
+ "apc-memory",
  "apc-models",
+ "apc-plugins",
  "apc-traits",
  "clap",
  "directories",
@@ -117,6 +127,7 @@ version = "0.1.0"
 dependencies = [
  "futures-core",
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "toml",
 ]
@@ -124,10 +135,24 @@ dependencies = [
 [[package]]
 name = "apc-decision"
 version = "0.1.0"
+dependencies = [
+ "apc-core",
+ "apc-traits",
+ "async-trait",
+ "tokio",
+]
 
 [[package]]
 name = "apc-memory"
 version = "0.1.0"
+dependencies = [
+ "apc-core",
+ "apc-traits",
+ "async-trait",
+ "directories",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "apc-models"
@@ -145,10 +170,22 @@ dependencies = [
 [[package]]
 name = "apc-plugins"
 version = "0.1.0"
+dependencies = [
+ "apc-tools",
+ "apc-traits",
+]
 
 [[package]]
 name = "apc-tools"
 version = "0.1.0"
+dependencies = [
+ "apc-core",
+ "apc-decision",
+ "apc-traits",
+ "async-trait",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "apc-traits"
@@ -156,6 +193,7 @@ version = "0.1.0"
 dependencies = [
  "apc-core",
  "async-trait",
+ "serde_json",
 ]
 
 [[package]]
@@ -425,6 +463,16 @@ name = "equivalent"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
+
+[[package]]
+name = "errno"
+version = "0.3.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
+]
 
 [[package]]
 name = "find-msvc-tools"
@@ -1751,6 +1799,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+dependencies = [
+ "errno",
+ "libc",
+]
+
+[[package]]
 name = "simd_cesu8"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1944,6 +2002,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

@@ -113,7 +113,7 @@ aplix-code/
 │   ├── apc-tools/      # Built-in tools (fs, shell).
 │   ├── apc-decision/   # Local decision engine (open-jev) + heuristics fallback.
 │   ├── apc-models/     # LLM provider adapters (direct HTTP, SSE streaming).
-│   ├── apc-memory/     # Session & long-term memory backends.
+│   ├── apc-memory/     # Session history (JSONL); long-term memory lands in v1.3.
 │   ├── apc-plugins/    # Static plugin registry (dynamic loading lands in v1.2).
 │   └── apc-cli/        # The `apc` binary.
 └── skills/             # Markdown-based skill definitions.
@@ -176,6 +176,7 @@ Requirements: Rust 1.80+, a modern OS. No system dependencies beyond OpenSSL (or
 | :--- | :--- |
 | **v0.1** | Skeleton, workspace, `apc init` + config resolution |
 | **v0.2** | `apc run` + `apc chat` with streaming over direct HTTP adapters |
+| **v0.2b** | Session memory in JSONL, `apc chat --continue` |
 | **v0.3** | Local Permission Guard: heuristic first, then `open-jev` |
 | **v0.4** | `apc model` subcommand + resumable downloads |
 | **v0.5** | Opt-in telemetry: local `tracing` logs + Sentry, off by default |

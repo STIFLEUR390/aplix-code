@@ -18,8 +18,12 @@ default = ["telemetry"]
 telemetry = ["dep:sentry"]
 
 [dependencies]
+apc-agent.workspace = true
 apc-core.workspace = true
+apc-decision.workspace = true
+apc-memory.workspace = true
 apc-models.workspace = true
+apc-plugins.workspace = true
 apc-traits.workspace = true
 anyhow.workspace = true
 clap.workspace = true

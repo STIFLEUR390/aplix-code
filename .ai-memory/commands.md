@@ -30,6 +30,8 @@ ls -lh target/release/apc             # must stay under 15 MB (893 KB at v0.1)
 ```bash
 cargo test -p apc-core config              # one crate, tests matching "config"
 cargo test -p apc-cli --test cli           # CLI end-to-end
+cargo test -p apc-tools                    # path confinement + refused confirmation
+cargo test -p apc-decision                 # guard patterns, true and false positives
 cargo test precedence -- --nocapture       # one test + stdout
 ```
 
@@ -37,10 +39,11 @@ cargo test precedence -- --nocapture       # one test + stdout
 test (`std::env::temp_dir()/apc-cli-<pid>-<name>`), so it needs no extra dev-dependency and never
 reads the developer's real config.
 
-## Workspace shape (v0.2)
+## Workspace shape (v0.3)
 
 Root `Cargo.toml`: `members = ["crates/*"]`, `resolver = "2"`, `[workspace.package]` (version, edition
-2021, `rust-version = "1.80"`, MIT), `[workspace.dependencies]` (`apc-core`, `apc-models`, `apc-traits`, `anyhow`, `async-trait`, `bytes`,
+2021, `rust-version = "1.80"`, MIT), `[workspace.dependencies]` (`apc-agent`, `apc-core`, `apc-decision`, `apc-memory`, `apc-models`,
+`apc-plugins`, `apc-tools`, `apc-traits`, `anyhow`, `async-trait`, `bytes`,
 `clap`, `directories`, `futures-core`, `futures-util`, `reqwest`, `sentry`, `serde`, `serde_json`,
 `thiserror`, `tokio`, `toml` — add entries only when a crate uses them), plus the
 release profile:
@@ -67,6 +70,7 @@ release builds and `cargo test` do not. The trailing `/v1` matters: the adapter 
 ```bash
 cargo run -p apc-cli -- run "dis bonjour en un mot"   # streams the answer
 cargo run -p apc-cli -- chat                          # REPL, exit/quit/EOF
+cargo run -p apc-cli -- chat --continue                # replay the latest session
 printf 'Quelle est la capitale de la France ?\nquit\n' | cargo run -p apc-cli -- chat
 ```
 
@@ -76,7 +80,7 @@ printf 'Quelle est la capitale de la France ?\nquit\n' | cargo run -p apc-cli --
 apc init                        # writes a commented apc.toml
 apc config                      # effective config + which layer set each key (P1)
 apc run "<prompt>"              # v0.2, streams
-apc chat                        # v0.2 REPL; --continue bails until v0.2b
+apc chat [--continue]           # v0.2 REPL, sessions persisted (v0.2b)
 apc model list                  # target (v0.4)
 apc model download open-jev     # ~350 MB, resumable + SHA-256 verified
 apc model status
@@ -84,7 +88,8 @@ apc model verify
 apc model remove open-jev
 ```
 
-Model cache and sessions live under `${XDG_DATA_HOME:-~/.local/share}/aplix/`.
+Model cache and sessions live under `${XDG_DATA_HOME:-~/.local/share}/aplix/`
+(sessions in `sessions/<id>.jsonl`, one file per conversation).
 
 ## Telemetry (Sentry)
 

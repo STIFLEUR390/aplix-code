@@ -9,3 +9,11 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+apc-core.workspace = true
+apc-traits.workspace = true
+async-trait.workspace = true
+directories.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

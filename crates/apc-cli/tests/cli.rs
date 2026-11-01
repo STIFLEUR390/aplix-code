@@ -16,12 +16,37 @@ fn apc(dir: &Path, args: &[&str]) -> Output {
 }
 
 fn apc_env(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
+    base_command(dir, args, env).output().expect("run apc")
+}
+
+/// Same, with `input` piped to stdin (for the REPL).
+fn apc_stdin(dir: &Path, args: &[&str], env: &[(&str, &str)], input: &str) -> Output {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = base_command(dir, args, env)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn apc");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(input.as_bytes())
+        .expect("write stdin");
+    child.wait_with_output().expect("run apc")
+}
+
+fn base_command(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_apc"));
     command
         .args(args)
         .current_dir(dir)
         .env("HOME", dir)
         .env("XDG_CONFIG_HOME", dir.join("xdg"))
+        .env("XDG_DATA_HOME", dir.join("data"))
         .env_remove("APC_PROVIDER")
         .env_remove("APC_MODEL")
         .env_remove("APC_BASE_URL")
@@ -31,7 +56,7 @@ fn apc_env(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
     for (key, value) in env {
         command.env(key, value);
     }
-    command.output().expect("run apc")
+    command
 }
 
 fn stdout(output: &Output) -> String {
@@ -235,4 +260,48 @@ fn run_reports_a_non_stream_response() {
         "{}",
         stderr(&output)
     );
+}
+
+/// The single session file the sandbox holds.
+fn session_file(dir: &Path) -> PathBuf {
+    let sessions = dir.join("data/aplix/sessions");
+    let files: Vec<PathBuf> = std::fs::read_dir(&sessions)
+        .expect("sessions dir")
+        .map(|entry| entry.expect("entry").path())
+        .collect();
+    assert_eq!(files.len(), 1, "{files:?}");
+    files[0].clone()
+}
+
+#[test]
+fn chat_persists_a_session_and_continues_it() {
+    let dir = sandbox("chat");
+    assert!(apc(&dir, &["init"]).status.success());
+    let answer = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n";
+
+    let port = sse_server(answer);
+    let base = format!("http://127.0.0.1:{port}/v1");
+    let env = [("APC_BASE_URL", base.as_str()), ("APC_API_KEY", "test")];
+    let first = apc_stdin(&dir, &["chat"], &env, "bonjour\nquit\n");
+    assert!(first.status.success(), "{}", stderr(&first));
+
+    let path = session_file(&dir);
+    let text = std::fs::read_to_string(&path).expect("read session");
+    assert_eq!(text.lines().count(), 2, "{text}");
+    assert!(text.contains("\"role\":\"user\""), "{text}");
+    assert!(text.contains("\"role\":\"assistant\""), "{text}");
+
+    let port = sse_server(answer);
+    let base = format!("http://127.0.0.1:{port}/v1");
+    let env = [("APC_BASE_URL", base.as_str()), ("APC_API_KEY", "test")];
+    let second = apc_stdin(&dir, &["chat", "--continue"], &env, "encore\nquit\n");
+    assert!(second.status.success(), "{}", stderr(&second));
+    assert!(
+        stderr(&second).contains("continuing session"),
+        "{}",
+        stderr(&second)
+    );
+
+    let text = std::fs::read_to_string(session_file(&dir)).expect("read session");
+    assert_eq!(text.lines().count(), 4, "{text}");
 }

@@ -1,7 +1,7 @@
 # Architecture (SPEC §4)
 
-v0.1 implements the bottom of the stack: `apc-core` (config) and `apc-cli` (binary). The rest is the
-contract to implement against. `SPEC.md` is the reference; `README.md` §Architecture is the same
+v0.3 is shipped end to end: config, providers, sessions, tools and the guard. What remains is the
+`open-jev` backend (v0.3b), `apc model` (v0.4), hooks, context compaction and the post-MVP items. `SPEC.md` is the reference; `README.md` §Architecture is the same
 layout minus the V1 refinements below.
 
 ## Crate layout
@@ -13,7 +13,7 @@ crates/
   apc-agent/     agent loop, orchestration           — no direct I/O
   apc-tools/     built-in tools (fs, shell)
   apc-decision/  Permission Guard: heuristic first, then open-jev
-  apc-models/    LLM adapters (genai)
+  apc-models/    LLM adapters (direct HTTP + SSE)
   apc-memory/    JSONL session store (+ future backends)
   apc-plugins/   static plugin registry
   apc-cli/       the `apc` binary — composition root
@@ -33,12 +33,11 @@ changing callers.
 ```rust
 #[async_trait]
 pub trait ModelAdapter: Send + Sync {
-    async fn chat(&self, messages: &[Message], tools: &[Tool]) -> Result<ChatStream>;
+    async fn chat(&self, messages: &[Message], tools: &[ToolSpec]) -> Result<ChatStream>;
     fn model(&self) -> &str;
 }
 ```
-(The v0.2 signature actually shipped is `chat(&self, messages: &[Message])` + `model()`; tools enter
-the trait in v0.3.)
+Shipped signature: `chat(&self, messages: &[Message], tools: &[ToolSpec]) -> Result<ChatStream>`.
 
 #[async_trait]
 pub trait DecisionProvider: Send + Sync {
@@ -47,9 +46,15 @@ pub trait DecisionProvider: Send + Sync {
 }
 
 pub trait Tool: Send + Sync {
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
     fn schema(&self) -> serde_json::Value;
-    async fn execute(&self, args: serde_json::Value) -> Result<ToolResult>;
+    async fn execute(&self, args: serde_json::Value) -> Result<String>;
+    fn spec(&self) -> ToolSpec;            // provided
+}
+
+pub trait Approver: Send + Sync {
+    fn confirm(&self, command: &str, risk: f64) -> Result<bool>;
 }
 
 pub trait MemoryStore: Send + Sync {
@@ -67,25 +72,38 @@ pub trait Plugin: Send + Sync {
 confidence. Keep the names exactly as written (`noul` comes from the local-jev lineage).
 `chat` returns a **stream**, not a full response (SPEC §8.3).
 
-## Agent loop
+## Agent loop (v0.3, shipped)
 
-ReAct: `Observation → Reflection → Action`, with error handling, timeouts and a per-turn iteration
-cap. Hooks reserved for lifecycle events (`PreToolUse`, `PostToolUse`, `Stop`) — not user-exposed in
-V1, but the extension point must exist.
+`apc-agent::Agent { adapter: Arc<dyn ModelAdapter>, tools: Vec<Arc<dyn Tool>> }`:
 
-Context compaction: summarize older messages when approaching the model window.
+1. `adapter.chat(conversation, &specs)` and drain the stream, forwarding `ChatEvent`s to the caller's
+   callback (the CLI prints deltas as they land).
+2. No tool calls ⇒ push `Message::assistant(text)` and stop.
+3. Otherwise push `Message::assistant_calls(text, calls)`, run each call, push
+   `Message::tool_result(call.id, text)` for every call — including failures and unknown names, which
+   the model reads as the answer.
+4. At most `MAX_STEPS = 8` tool rounds; beyond that `Error::Tool("stopped after 8 tool steps …")`.
 
-## Built-in tools (P0)
+Still to come: hooks (`PreToolUse`, `PostToolUse`, `Stop`) and context compaction.
 
-`read_file`, `write_file` (confirmation if the file exists), `list_dir`, `run_shell` (Permission
-Guard only).
+## Built-in tools (v0.3, shipped)
+
+`crates/apc-tools/src/lib.rs`: `ReadFile`, `WriteFile`, `ListDir`, `RunShell`.
+
+- Paths resolve lexically under the working directory; absolute paths and `..` above the root are
+  refused (`resolve()`), so nothing needs to exist yet and no filesystem call decides safety.
+- `RunShell` is the only shell in the workspace: `decision.noul(command, GUARD_QUESTION)` then, when
+  `risk > threshold`, `approver.confirm(...)`. A refusal returns
+  `"the user declined to run this command, so it was not executed: …"` as the tool result.
+- `apc-plugins::default_tools(root, decision, approver, threshold)` assembles the four; the CLI never
+  names a tool itself.
 
 ## CLI surface
 
 | Command | Priority | State |
 | :--- | :--- | :--- |
-| `apc run "<prompt>"` | P0 | v0.2 |
-| `apc chat` (plain REPL; `--continue` resumes) | P0 | v0.2 |
+| `apc run "<prompt>"` | P0 | **done** (agent + tools) |
+| `apc chat` (plain REPL; `--continue` resumes) | P0 | **done** |
 | `apc init` | P0 | **done** |
 | `apc model list\|download\|status\|verify\|remove` | P0 | v0.4 |
 | `apc --version` (also prints the loaded decision model) | P0 | **done** (`decision model: none (heuristic fallback)`) |
@@ -127,11 +145,20 @@ via clap `Args`. No precedence logic there.
 - A 200 response whose body is not an event stream is converted into an error carrying the first
   200 chars — a wrong `base_url` otherwise streams nothing and exits 0.
 
-## Session memory
+## Session memory (v0.2b, shipped)
 
-Not implemented yet (v0.2b): `apc chat` keeps `Vec<Message>` in memory and `--continue` bails.
-Target state: JSONL under `${XDG_DATA_HOME:-~/.local/share}/aplix/sessions/`, one file per session. `apc chat
---continue` reloads the latest. No long-term memory in V1 (v1.3).
+`apc-memory::JsonlStore` implements `MemoryStore`: one JSONL file per session under
+`ProjectDirs::from("dev","aplix","aplix").data_dir()/sessions/`, a `Message` per line
+(`{"role":"user","content":"…"}`), append-only.
+
+- `new_session()` → `{:013}-{:06}` (unix seconds + microseconds): file names sort chronologically, so
+  `latest_session()` is `max()` over `read_dir`, no stat calls.
+- `load(None)` = latest session; `load(Some(id))` = that file; a missing file/dir loads empty.
+- Lines that fail to parse are skipped — a torn append leaves a fragment and must not lose the rest.
+- `apc chat` appends the user turn *before* calling the provider (a crash keeps the prompt) and the
+  full assistant reply after the stream ends. `apc run` does not persist anything.
+- `--continue` prints `continuing session <id> (N messages)` to stderr, then replays into context.
+- Long-term memory (schema, forgetting, distillation) is v1.3; the same trait will take it.
 
 ## Telemetry (Sentry)
 

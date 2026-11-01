@@ -2,11 +2,12 @@
 
 ## State of the repo (check before assuming anything)
 
-v0.2 exists: a Cargo workspace (`crates/*`, 9 crates). Four have real code — `apc-core` (config schema,
-layered resolution, provider-neutral chat types), `apc-traits` (`ModelAdapter`), `apc-models` (HTTP
-adapters, SSE streaming) and `apc-cli` (`init`, `config`, `run`, `chat`, `--version`). The remaining
-five are placeholders holding a doc comment. `apc model` does **not** exist yet (v0.4), there is no
-CI, and `skills/` is still missing. Read the tree before assuming a module exists.
+v0.3 exists: a Cargo workspace (`crates/*`, 9 crates) and all nine now hold code — `apc-core`
+(config + chat types), `apc-traits` (every trait), `apc-models` (HTTP adapters, SSE), `apc-memory`
+(JSONL sessions), `apc-decision` (heuristic guard), `apc-tools` (file tools + guarded shell),
+`apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli` (`init`, `config`, `run`,
+`chat`, `--version`). `apc model`, the `open-jev` backend, hooks and `skills/` do **not** exist yet
+(v0.3b+), and there is no CI. Read the tree before assuming a module exists.
 
 ## Sources of truth
 
@@ -61,10 +62,50 @@ dependency to `apc-agent` or `apc-cli`.
   missing from `ENV_KEYS`.
 - Anthropic needs `max_tokens` (constant) and its system prompt hoisted to a top-level field; the
   OpenAI dialect keeps `system` as a message. That split lives in `body()`.
-- `apc chat --continue` bails on purpose until `apc-memory` lands (v0.2b): the message history is
-  in-memory only.
+- `apc chat` persists every exchange as it happens; `--continue` replays the most recent session.
 - Debug builds read `./.env` through `load_dotenv` in `crates/apc-cli/src/main.rs`; release builds do
   not. The file is git-ignored and holds the local gateway URL, its key and the local Sentry DSN.
+
+## Agent loop, tools and the guard (v0.3)
+
+- `apc-agent::Agent::run` owns the ReAct loop: one streamed turn, then one tool execution per call,
+  then the tool results go back as messages. It appends every turn to the `Vec<Message>` it is given —
+  `apc-cli` persists the tail (`messages[before..]`) instead of re-deriving the exchange.
+- A failing tool is a **message to the model**, never a crash: `execute` returns the error text as the
+  call result, and an unknown tool name returns `unknown tool \`x\``. Only connecting to a provider or
+  exceeding `MAX_STEPS` (8 tool rounds) is an error for the user.
+- `RunShell` is the only path to a shell in the workspace. It asks the `DecisionProvider` first and
+  only calls `Approver::confirm` when `risk > threshold` (strict `>`; a score of exactly 0.8 does not
+  prompt — that is why `git push --force` scores 0.82). Declining returns a refusal string the model
+  sees; the command is never spawned. If you add a tool that runs a process, it must take the same
+  route — the guard lives in the tool, not in the CLI.
+- `score()` is substring matching over a lowercase command, keeping the highest match: fast, and
+  honest about being a fallback until `open-jev` lands (v0.3b). Adding a pattern is one tuple in
+  `PATTERNS` in `crates/apc-decision/src/lib.rs`; the true-positive test asserts `> 0.8`.
+- Tools resolve paths lexically against the working directory (`..` and absolute paths are refused).
+  Don't switch to `canonicalize`: the file may not exist yet, and the check must not depend on the
+  filesystem.
+- The CLI's `StdinApprover` reads the terminal synchronously inside the async fn. Deliberate: one
+  flow, nothing else to run meanwhile. If a second concurrent tool call ever appears, revisit it.
+- `apc-plugins::default_tools(root, decision, approver, threshold)` is what `apc-cli` asks for its
+  tool set — keep hardcoded tool wiring out of the CLI.
+- `Message` carries `tool_calls` / `tool_call_id`, and both dialects map them differently (OpenAI
+  `tool_calls` + `role: tool`, Anthropic `tool_use`/`tool_result` blocks). Tool arguments arrive as a
+  raw JSON **string** because that is how providers stream them; the agent parses them once.
+
+## Session memory (v0.2b)
+
+- `apc-memory::JsonlStore` writes one file per session under
+  `ProjectDirs::from("dev","aplix","aplix").data_dir()/sessions/<id>.jsonl`. Never hardcode
+  `~/.local/share`; the CLI tests point `XDG_DATA_HOME` at their sandbox for exactly this reason.
+- A session id is `{:013}-{:06}` (unix seconds, microseconds), so plain `sort()` on the file names is
+  chronological and "latest" needs no stat calls.
+- Loading skips lines that do not parse: an interrupted append leaves a torn tail, and losing the
+  conversation over half a line is worse than dropping it. Dropping a *middle* line silently is the
+  accepted cost of that rule.
+- `MemoryStore::load(None)` means "the most recent session". The trait stays async although the
+  implementation uses `std::fs` — the calls are tiny and the CLI is single-flowing.
+- Writes are append-only and flushed per message; a crash mid-turn keeps the user's prompt.
 
 ## Config — the shipped feature
 
@@ -119,6 +160,9 @@ cargo build --offline                    # this machine cannot reach crates.io a
 cargo test --workspace
 cargo test -p apc-core config            # single crate / single test (substring match)
 cargo test -p apc-cli --test cli         # CLI end-to-end, incl. a local SSE stub server
+cargo test -p apc-memory                 # session append/load, torn tail
+cargo test -p apc-decision               # guard patterns: true positives and benign commands
+cargo test -p apc-tools                  # path confinement + a refused confirmation runs nothing
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 cargo build --no-default-features        # compiles the Sentry feature out
@@ -135,8 +179,9 @@ If CI is added, it becomes the source of truth for this list.
 ## Roadmap order (SPEC §7 — do not jump ahead of it)
 
 v0.1 skeleton + `apc init`/`apc config`/config resolution (**done**) → v0.2 `run`/`chat` with
-streaming over direct HTTP adapters (**done**) → v0.2b session memory JSONL → v0.3 Permission Guard
-(heuristic, then `open-jev`) → v0.4 `apc model` + downloads → v0.5 telemetry off/on → v1.0 MVP. TUI (`ratatui`, v1.1), intent classification, `skills/`, SearXNG/Obscura (v1.2),
+streaming over direct HTTP adapters (**done**) → v0.2b session memory JSONL (**done**) → v0.3 agent
+loop, tools and the heuristic Permission Guard (**done**) → v0.3b `open-jev` behind the feature flag →
+v0.4 `apc model` + downloads → v0.5 telemetry off/on → v1.0 MVP. TUI (`ratatui`, v1.1), intent classification, `skills/`, SearXNG/Obscura (v1.2),
 long-term memory (v1.3), `apc serve` + Tauri (v2.0), sandboxing/WASM (v2.1) are all **post-MVP** —
 don't scaffold them for an MVP task.
 

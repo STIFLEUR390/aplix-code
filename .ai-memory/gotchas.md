@@ -2,9 +2,9 @@
 
 ## Repository reality vs docs
 
-- `README.md` (vision) and `SPEC.md` (MVP) describe the **target**. v0.2 code exists (workspace,
-  config, `apc init`/`config`, `apc run`/`chat` streaming over HTTP adapters, Sentry telemetry);
-  `apc model`, tools, Permission Guard, session memory and five crates do not. Still absent: CI,
+- `README.md` (vision) and `SPEC.md` (MVP) describe the **target**. v0.2b code exists (workspace,
+  config, `apc init`/`config`, `apc run`/`chat` streaming over HTTP adapters, JSONL sessions, Sentry
+  telemetry); `apc model`, tools, Permission Guard and four crates do not. Still absent: CI,
   `skills/`, `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/`.
 - Coding tasks name a crate that may still be a placeholder — check its `src/lib.rs` before assuming
   a module exists.
@@ -47,6 +47,21 @@
   the dialect. Both were compile errors before they were learned.
 - CLI tests fake the network with a one-shot `TcpListener` + canned SSE body; never point a test at
   the real relay.
+
+## Session memory (v0.2b)
+
+- Files are append-only JSONL, one `Message` per line. Never rewrite a session file in place: a
+  reader (`load`) tolerates only the *last* line being torn, and silently skips any unparsable line.
+- Session ids are `{:013}-{:06}` unix seconds+microseconds — swapping to UUIDs would break the
+  "latest = sort by name" rule that `latest_session()` relies on.
+- Two sessions created in the same microsecond would collide; the ordering assumption is worth more
+  than a UUID, and a collision only merges two bots' turns.
+- `load(None)` means latest, so a caller that wants "start fresh" must call `new_session()`, not
+  `load(None)`.
+- `apc chat` writes the user turn before the request: a provider failure still leaves the prompt in
+  the file, and a retry via `--continue` continues from it.
+- Tests: `cargo test -p apc-memory`; the CLI test points `XDG_DATA_HOME` at its sandbox
+  (`dir/data/aplix/sessions`), so runs never touch your real history.
 
 ## Telemetry / Sentry (v0.1 dev phase)
 
@@ -120,12 +135,21 @@ the reason is the most likely regression here:
 - Any dependency that links an ML runtime (candle/ort) blows the budget — that is exactly why the
   decision model is downloaded at runtime and feature-gated.
 
-## Permission Guard
+## Permission Guard (v0.3)
 
-- The heuristic must exist before the neural model; otherwise the first working build has no safety
-  net and the model is not even downloadable yet (v0.3 precedes v0.4).
-- `P > 0.8` ⇒ confirm. A "bypass everything" flag is not in the MVP; if one is ever added it must be
-  explicit, logged, and visible in `apc config`.
+- The heuristic exists; the neural model does not (v0.3b). `score()` in
+  `crates/apc-decision/src/lib.rs` lowercases the command, substring-matches `PATTERNS`, and keeps the
+  highest score — no parsing, no shell-awareness, so `echo 'rm -rf /'` is flagged too (a false
+  positive the user can decline; the reverse would be a hole).
+- `P > 0.8` ⇒ confirm, strict `>`: a pattern scoring exactly 0.8 never prompts under the default
+  threshold. `git push --force` is 0.82 for that reason; if you add a 0.8 entry, you added nothing.
+- Declining returns text to the model, and the command is never spawned — that is the contract
+  (`a_refused_confirmation_does_not_run_the_command` asserts it with a `touch` marker).
+- The guard lives in `RunShell`, not in `apc-cli` and not in `apc-agent`. Any future tool that spawns
+  a process must take the same `DecisionProvider` + `Approver` pair, or the "no path executes a shell"
+  rule breaks silently.
+- A "bypass everything" flag is not in the MVP; if one is ever added it must be explicit, logged, and
+  visible in `apc config`.
 
 ## Model downloads and sessions
 
@@ -133,6 +157,24 @@ the reason is the most likely regression here:
   `.part` and renaming only after the digest matches. A Ctrl-C must never leave a file that later
   loads silently.
 - Never hardcode `~/.local/share` — use `XDG_DATA_HOME` (crate `directories`) so macOS/Windows work.
+
+## Agent loop / tools (v0.3)
+
+- Tool arguments arrive as a **string** (that is how both providers stream them). `apc-agent` parses
+  once, and falls back to `{"raw": "…"}` when the model emits invalid JSON.
+- Tool `execute` errors are answers, not crashes: they become the `role: tool` message. The user only
+  sees a hard error for a provider failure or `MAX_STEPS` exhaustion.
+- `apc-cli` persists `messages[before..]` after `Agent::run`; the agent appended the assistant turn and
+  every tool exchange. Persisting inside the loop would need the store passed into `apc-agent`, which
+  must stay I/O-free.
+- `apc-tools::resolve` is lexical on purpose. `canonicalize` would fail for files that do not exist
+  yet (`write_file`) and would make safety depend on the filesystem.
+- OpenAI sends tool-call fragments indexed by `delta.tool_calls[].index`; Anthropic sends
+  `content_block_start` + `input_json_delta`. Both are flushed as one `ChatEvent::ToolCall` — a
+  server that closes the stream without `finish_reason`/`message_stop` still gets its calls from the
+  `None` branch of `stream_from`.
+- `Approver::confirm` blocks the async runtime on stdin. Fine for a one-command-at-a-time CLI; if
+  concurrent tool calls appear, move it to `spawn_blocking`.
 
 ## Docs drift
 

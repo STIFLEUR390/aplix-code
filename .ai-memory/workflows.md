@@ -3,7 +3,7 @@
 ## Starting a session
 
 1. Read `index.md`, then the one doc matching the task.
-2. Check the tree: v0.1 is implemented, later milestones are not. Don't trust a doc claim about a
+2. Check the tree: milestones up to v0.3 are implemented, later ones are not. Don't trust a doc claim about a
    module without looking at `crates/<crate>/src`.
 3. For an MVP task, open `SPEC.md` at the relevant section. When the request contradicts a §8
    decision, say so instead of reverting silently.
@@ -14,7 +14,9 @@
 | :--- | :--- |
 | v0.1 | Workspace skeleton, `apc init`, config resolution, `apc config` — **done** |
 | v0.2 | `apc run` + `apc chat` (plain REPL), streaming over direct HTTP adapters — **done** (no `genai`, SPEC §8.10) |
-| v0.3 | Permission Guard: heuristic, then `open-jev` + fallback |
+| v0.2b | Session memory JSONL + `apc chat --continue` — **done** |
+| v0.3 | Agent loop + built-in tools + heuristic Permission Guard — **done** |
+| v0.3b | `open-jev` backend behind a feature flag (heuristic stays the fallback) |
 | v0.4 | `apc model` + resumable downloads |
 | v0.5 | Opt-in telemetry: `tracing` logs + Sentry, off by default |
 | v1.0 | MVP: stable CLI, docs, CI, releases Linux/macOS/Windows |
@@ -53,7 +55,7 @@ these IDs instead of creating duplicates:
 | 1 | v0.1 workspace + init/config | 2026-11-08 | high | `jj90o5xa0x4igxpd7rfjeal4` |
 | 2 | v0.2 run/chat streaming | 2026-11-22 | high | `jzz8xyz22raiiwau7e7m4jzk` |
 | 3 | v0.2b session memory JSONL | 2026-11-22 | medium | `sp7r39ab6iu9omkgz7znzomc` |
-| 4 | v0.3 Permission Guard heuristic | 2026-12-06 | urgent | `ehjgpk8kkekz1qecoo2eql1j` |
+| 4 | v0.3 agent loop + tools + guard heuristic | 2026-12-06 | urgent | `ehjgpk8kkekz1qecoo2eql1j` |
 | 5 | v0.3b open-jev feature flag | 2026-12-20 | medium | `p5hiqzv2bksz3r4ys6m3cr3u` |
 | 6 | v0.4 model download | 2027-01-10 | high | `gsrte5nb2okub7z9szgshjzi` |
 | 7 | v0.5 telemetry opt-in | 2027-01-24 | medium | `fs09rasodfc7bm4t1rf03kqu` |

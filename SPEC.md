@@ -175,7 +175,7 @@ Traits principaux :
 ```rust
 #[async_trait]
 pub trait ModelAdapter: Send + Sync {
-    async fn chat(&self, messages: &[Message], tools: &[Tool]) -> Result<ChatStream>;
+    async fn chat(&self, messages: &[Message], tools: &[ToolSpec]) -> Result<ChatStream>;
 }
 
 #[async_trait]
@@ -185,9 +185,15 @@ pub trait DecisionProvider: Send + Sync {
 }
 
 pub trait Tool: Send + Sync {
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
     fn schema(&self) -> serde_json::Value;
-    async fn execute(&self, args: serde_json::Value) -> Result<ToolResult>;
+    async fn execute(&self, args: serde_json::Value) -> Result<String>;
+}
+
+/// Confirmation humaine avant une action gardée (implémentée par le CLI, jamais par un outil).
+pub trait Approver: Send + Sync {
+    fn confirm(&self, command: &str, risk: f64) -> Result<bool>;
 }
 
 pub trait MemoryStore: Send + Sync {
@@ -252,7 +258,8 @@ opt-level = 3      # voir §8.5 : la vitesse primait sur la taille
 | :--- | :--- |
 | v0.1 | Squelette du workspace, `apc init`, résolution de config, `apc config` |
 | v0.2 | `apc run` + `apc chat` (REPL texte), streaming SSE, adaptateurs HTTP directs |
-| v0.3 | Permission Guard : heuristique puis `open-jev` + fallback |
+| v0.3 | Boucle d'agent + outils intégrés ; Permission Guard heuristique sur `run_shell` |
+| v0.3b | Backend `open-jev` derrière un feature flag (l'heuristique reste le fallback) |
 | v0.4 | `apc model` + téléchargement reprenable |
 | v0.5 | Télémétrie opt-in : logs `tracing` locaux + Sentry désactivé par défaut |
 | v1.0 | MVP stable : CLI, docs, CI, releases Linux/macOS/Windows |

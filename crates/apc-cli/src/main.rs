@@ -8,10 +8,11 @@ use std::process::ExitCode;
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use directories::ProjectDirs;
-use futures_util::StreamExt;
 
-use apc_core::chat::{ChatEvent, ChatStream, Message};
+use apc_core::chat::{ChatEvent, Message};
 use apc_core::config::{self, Layer, Loaded, Source};
+use apc_memory::JsonlStore;
+use apc_traits::{Approver, DecisionProvider, MemoryStore};
 
 mod telemetry;
 
@@ -167,21 +168,36 @@ fn telemetry_enabled(cli: &Cli) -> bool {
 
 async fn run_prompt(args: &RunArgs) -> Result<()> {
     let (loaded, _) = resolve(&args.overrides)?;
-    let adapter = apc_models::build(&loaded.config.provider)?;
-    let stream = adapter
-        .chat(&[Message::user(args.prompt.join(" "))])
-        .await?;
-    print_stream(stream).await
+    let agent = agent(&loaded.config)?;
+    let mut messages = vec![Message::user(args.prompt.join(" "))];
+    agent.run(&mut messages, print_delta).await?;
+    println!();
+    Ok(())
 }
 
 async fn chat(args: &ChatArgs) -> Result<()> {
-    if args.r#continue {
-        bail!("--continue needs session memory, which lands in v0.2b");
-    }
     let (loaded, _) = resolve(&args.overrides)?;
-    let adapter = apc_models::build(&loaded.config.provider)?;
+    let agent = agent(&loaded.config)?;
+    let store = JsonlStore::new()?;
 
-    let mut messages: Vec<Message> = Vec::new();
+    let mut messages = Vec::new();
+    let session = if args.r#continue {
+        match store.latest_session()? {
+            Some(session) => {
+                messages = store.load(Some(&session)).await?;
+                eprintln!(
+                    "continuing session {} ({} messages)",
+                    session,
+                    messages.len()
+                );
+                session
+            }
+            None => store.new_session(),
+        }
+    } else {
+        store.new_session()
+    };
+
     loop {
         print!("› ");
         io::stdout().flush()?;
@@ -196,26 +212,61 @@ async fn chat(args: &ChatArgs) -> Result<()> {
         if matches!(text, "exit" | "quit") {
             break;
         }
-        messages.push(Message::user(text));
-        print_stream(adapter.chat(&messages).await?).await?;
+        let question = Message::user(text);
+        store.append(&session, &question).await?;
+        messages.push(question);
+
+        // The agent appends the assistant turn and every tool exchange; persist what it added.
+        let before = messages.len();
+        agent.run(&mut messages, print_delta).await?;
+        println!();
+        for message in &messages[before..] {
+            store.append(&session, message).await?;
+        }
     }
     Ok(())
 }
 
-/// Print deltas as they arrive; one newline when the answer ends.
-async fn print_stream(mut stream: ChatStream) -> Result<()> {
-    let mut out = io::stdout();
-    while let Some(event) = stream.next().await {
-        match event? {
-            ChatEvent::Delta(text) => {
-                out.write_all(text.as_bytes())?;
-                out.flush()?;
-            }
-            ChatEvent::Done => {}
-        }
+/// Print streamed text as it arrives.
+fn print_delta(event: &ChatEvent) {
+    if let ChatEvent::Delta(delta) = event {
+        print!("{delta}");
+        let _ = io::stdout().flush();
     }
-    writeln!(out)?;
-    Ok(())
+}
+
+/// One agent with the built-in tools and the heuristic guard.
+fn agent(config: &config::Config) -> Result<apc_agent::Agent> {
+    let adapter: std::sync::Arc<dyn apc_traits::ModelAdapter> =
+        std::sync::Arc::from(apc_models::build(&config.provider)?);
+    let decision: std::sync::Arc<dyn DecisionProvider> =
+        std::sync::Arc::new(apc_decision::HeuristicProvider);
+    let approver: std::sync::Arc<dyn Approver> = std::sync::Arc::new(StdinApprover);
+    let tools = apc_plugins::default_tools(
+        std::env::current_dir()?,
+        decision,
+        approver,
+        config.decision.threshold,
+    );
+    Ok(apc_agent::Agent::new(adapter, tools))
+}
+
+/// Asks the terminal before a destructive command runs.
+struct StdinApprover;
+
+impl Approver for StdinApprover {
+    fn confirm(&self, command: &str, risk: f64) -> apc_core::Result<bool> {
+        eprint!(
+            "\nabout to run — {:.0}% destructive risk\n  {command}\nrun it? [y/N] ",
+            risk * 100.0
+        );
+        io::stderr().flush().ok();
+        let mut line = String::new();
+        let read = io::stdin().read_line(&mut line).map_err(|error| {
+            apc_core::Error::Tool(format!("cannot read the confirmation: {error}"))
+        })?;
+        Ok(read > 0 && matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
+    }
 }
 
 fn init(args: &InitArgs) -> Result<()> {
