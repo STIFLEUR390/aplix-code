@@ -114,17 +114,17 @@ aplix-code/
 │   ├── apc-decision/   # Local decision engine (open-jev) + heuristics fallback.
 │   ├── apc-models/     # LLM provider adapters (via genai).
 │   ├── apc-memory/     # Session & long-term memory backends.
-│   ├── apc-plugins/    # Plugin discovery & loading.
+│   ├── apc-plugins/    # Static plugin registry (dynamic loading lands in v1.2).
 │   └── apc-cli/        # The `apc` binary.
 └── skills/             # Markdown-based skill definitions.
 ```
 
-**Key traits** (simplified):
+**Key traits** (simplified — `SPEC.md` §4 is authoritative, including the streaming return type):
 
 ```rust
 #[async_trait]
 pub trait ModelAdapter: Send + Sync {
-    async fn chat(&self, messages: &[Message], tools: &[Tool]) -> Result<Response>;
+    async fn chat(&self, messages: &[Message], tools: &[Tool]) -> Result<ChatStream>;
 }
 
 #[async_trait]
@@ -176,12 +176,15 @@ Requirements: Rust 1.80+, a modern OS. No system dependencies beyond OpenSSL (or
 | :--- | :--- |
 | **v0.1** | Skeleton, workspace, `apc init` + config resolution |
 | **v0.2** | `apc run` + `apc chat` with OpenAI/Anthropic via `genai` |
-| **v0.3** | Local Permission Guard with `open-jev` + fallback heuristics |
+| **v0.3** | Local Permission Guard: heuristic first, then `open-jev` |
 | **v0.4** | `apc model` subcommand + resumable downloads |
+| **v0.5** | Opt-in telemetry: local `tracing` logs + Sentry, off by default |
 | **v1.0** | MVP: stable CLI, docs, CI, releases for Linux/macOS/Windows |
-| **v1.1** | `ratatui`-based TUI, intent classification |
+| **v1.1** | `ratatui`-based TUI, intent classification, `skills/` |
 | **v1.2** | SearXNG + Obscura plugins |
+| **v1.3** | Long-term memory (SQLite + FTS5 / `sqlite-vec`) |
 | **v2.0** | `apc serve` + Tauri desktop app |
+| **v2.1** | Advanced sandboxing (Landlock/Seatbelt) or WASM plugins |
 
 ---
 

@@ -59,6 +59,22 @@ the reason is the most likely regression here:
   loads silently.
 - Never hardcode `~/.local/share` — use `XDG_DATA_HOME` (crate `directories`) so macOS/Windows work.
 
+## Docs drift
+
+- `README.md`'s trait sketch is *illustrative*: it omits `MemoryStore` and its `Tool` has no
+  `schema()`. `SPEC.md` §4 is the contract — five traits, streaming `chat`, tool schema required
+  by `genai` tool calling.
+- README tables were realigned with SPEC §7 (v0.5 telemetry, v1.3, v2.1) and with §8.3 (streaming).
+  If they diverge again, SPEC wins; fix the README rather than the spec.
+
+## Tooling: REA is not applicable here
+
+- `rea` reverse-engineers **shipped artifacts** (native binaries, Electron/JS bundles, firmware,
+  managed assemblies, browser pages). This repo contains only Markdown — no binary, no build output,
+  no capture. Its own guidance says to skip it for ordinary source-repository analysis.
+- Reconsider only when there is something to take apart: e.g. analysing a competitor's release
+  binary, or reconstructing a shipped `apc` artifact whose source you do not have.
+
 ## Task tracking (kaneo MCP)
 
 - Use workspace `GAiYlKA3Nr2yEh3Ea40IY0f0tvK4rjQ0` and project `f0yyfbfaoe4610r2d2hc8qir`.

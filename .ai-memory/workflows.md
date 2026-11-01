@@ -16,6 +16,7 @@
 | v0.2 | `apc run` + `apc chat` (plain REPL) via `genai`, streaming |
 | v0.3 | Permission Guard: heuristic, then `open-jev` + fallback |
 | v0.4 | `apc model` + resumable downloads |
+| v0.5 | Opt-in telemetry: `tracing` logs + Sentry, off by default |
 | v1.0 | MVP: stable CLI, docs, CI, releases Linux/macOS/Windows |
 | v1.1 | `ratatui` TUI, intent classification, `skills/` |
 | v1.2 | SearXNG + Obscura plugins, dynamic plugin loading |
@@ -42,6 +43,23 @@ kaneo MCP, fixed IDs:
 
 - workspace `GAiYlKA3Nr2yEh3Ea40IY0f0tvK4rjQ0`
 - project `f0yyfbfaoe4610r2d2hc8qir`
+
+Nine tasks exist (all `to-do`, assigned to DEV MASTER, chained by `blocks` relations). Update
+status/tickets through these IDs instead of creating duplicates:
+
+| # | Title | Due | Priority | taskId |
+| :-: | :--- | :--- | :--- | :--- |
+| 1 | v0.1 workspace + init/config | 2026-11-08 | high | `jj90o5xa0x4igxpd7rfjeal4` |
+| 2 | v0.2 run/chat streaming | 2026-11-22 | high | `jzz8xyz22raiiwau7e7m4jzk` |
+| 3 | v0.2b session memory JSONL | 2026-11-22 | medium | `sp7r39ab6iu9omkgz7znzomc` |
+| 4 | v0.3 Permission Guard heuristic | 2026-12-06 | urgent | `ehjgpk8kkekz1qecoo2eql1j` |
+| 5 | v0.3b open-jev feature flag | 2026-12-20 | medium | `p5hiqzv2bksz3r4ys6m3cr3u` |
+| 6 | v0.4 model download | 2027-01-10 | high | `gsrte5nb2okub7z9szgshjzi` |
+| 7 | v0.5 telemetry opt-in | 2027-01-24 | medium | `fs09rasodfc7bm4t1rf03kqu` |
+| 8 | v1.0 MVP release | 2027-02-01 | high | `i8hdfhjqxqjqh70o4zrqz239` |
+| 9 | v1.1 TUI/intent/skills | 2027-03-01 | low | `b2jrvx1yailriivbasw1k8uv` |
+
+Labels: `mvp`, `security`, `telemetry`, `release`, `post-mvp`.
 
 ## Before declaring work done
 

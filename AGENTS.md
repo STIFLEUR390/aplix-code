@@ -18,7 +18,8 @@ crate from scratch under the conventions below, not edit existing code.
 
 On a technical detail, `SPEC.md` wins, and its §8 records every deliberate divergence from the
 README *with the reason*. Don't "fix" a choice from §8 back to the README version without reading
-why it was made.
+why it was made. The README's Rust snippets are illustrative, not the contract; `.ai-memory/gotchas.md`
+lists the known drift.
 
 ## Naming — easy to get wrong
 
@@ -99,10 +100,15 @@ Always use these fixed IDs — don't create a new workspace or project, don't gu
 Tools that take `workspaceId` (projects, labels, workflow states) get the workspace ID; tools that
 take `projectId` (tasks, columns) get the project ID. Task-level tools only need `taskId`.
 
+Nine tasks already exist (v0.1 → v1.1, prioritised, dated, chained by `blocks`). Their `taskId`s are
+in `.ai-memory/workflows.md` — update those, don't create duplicates.
+
 ## Working notes
 
 - Project knowledge lives in `.ai-memory/` — read `index.md` first.
 - `skills/` is a planned top-level dir of Markdown skill definitions (v1.1, does not exist yet).
+- Don't reach for the `rea` MCP here: it analyses shipped binaries/bundles, and this repo has none.
+  CodeGraph applies once crates exist; plain `find`/`grep` covers it today.
 - `SPEC.md` is in French (the owner's source document); `README.md`, `AGENTS.md`, code and
   `.ai-memory/` are in English. Match the file you are editing.
 - No `CONTRIBUTING.md` yet even though the README links to it.
