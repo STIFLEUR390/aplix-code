@@ -57,7 +57,8 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 ### ✅ Working today (`v1.0`)
 
 - **`apc run "<prompt>"`** — One-shot agent mode: streams the answer, calls tools, guards shell.
-- **`apc chat`** — Interactive REPL in the terminal.
+- **`apc chat`** — Full-screen chat view (`ratatui`): scrollable transcript, live streaming, the
+  Permission Guard prompt in the status bar; falls back to a plain REPL when stdin/stdout is piped.
 - **`apc init`** — Generate a commented `apc.toml` config file.
 - **`apc config`** — Print the effective configuration and which layer supplied each key.
 - **Built-in tools**: `read_file`, `write_file`, `list_dir`, `run_shell`.
@@ -227,7 +228,7 @@ cargo test --workspace                        # fmt + clippy -D warnings are par
 | **v0.4** | `apc model` subcommand + resumable, verified downloads |
 | **v0.5** | Opt-in telemetry: local `tracing` logs + Sentry, off by default |
 | **v1.0** | MVP: CLI, docs, CI matrix and cross-platform release builds |
-| **v1.1** | `ratatui`-based TUI, intent classification, `skills/` |
+| **v1.1** | `ratatui`-based TUI — done; intent classification and `skills/` next |
 | **v1.2** | SearXNG + Obscura plugins |
 | **v1.3** | Long-term memory (SQLite + FTS5 / `sqlite-vec`) |
 | **v2.0** | `apc serve` + Tauri desktop app |

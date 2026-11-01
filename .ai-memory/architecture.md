@@ -115,11 +115,27 @@ Still to come: hooks (`PreToolUse`, `PostToolUse`, `Stop`) and context compactio
 | Command | Priority | State |
 | :--- | :--- | :--- |
 | `apc run "<prompt>"` | P0 | **done** (agent + tools) |
-| `apc chat` (plain REPL; `--continue` resumes) | P0 | **done** |
+| `apc chat` (full-screen view, or REPL when piped; `--continue` resumes) | P0 | **done** (v1.1 view) |
 | `apc init` | P0 | **done** |
 | `apc model list\|download\|status\|verify\|remove` | P0 | **done** (v0.4; empty catalog) |
 | `apc --version` (also prints the loaded decision model) | P0 | **done** (`decision model: none (heuristic fallback)`) |
 | `apc config` (effective config + which layer set it) | P1 | **done** |
+
+## Chat view (v1.1, `crates/apc-cli/src/tui.rs`)
+
+- `tui::available()` = stdin **and** stdout are terminals; anything piped (all CLI tests) takes
+  `main::repl`, the untouched stdin/stdout loop.
+- State: `App { session, transcript: String, input, mode: Idle | Busy(rx), pending: Option<Ask>,
+  tick, scroll }`. One loop per tick: pick up a pending guard question, draw, drain key events, drain
+  the agent channel, `sleep(50ms)`.
+- `Event` from the agent task is only `Delta(String)` and `Done(Option<String>)`: history never
+  travels back through the view. `run_turn` reloads the session with `JsonlStore::load(Some(&id))`,
+  appends the prompt, runs the agent, appends what it produced.
+- `TuiApprover(Sender<Ask>)` implements `Approver`; `confirm` blocks on a `std::sync::mpsc` reply
+  channel inside the agent task while the render loop shows the question in the footer and answers
+  on `y`/`n`. Poll the ask channel with `try_recv()`, never `recv()` from the async loop.
+- Scroll offset: `wrapped_height(text, width)` (per line `chars/width`, min 1) because
+  `Paragraph::line_count` is private in ratatui 0.29.
 
 ## Model store (v0.4, shipped)
 

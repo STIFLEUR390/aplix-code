@@ -30,8 +30,10 @@ apc-plugins.workspace = true
 apc-traits.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+crossterm.workspace = true
 directories.workspace = true
 futures-util.workspace = true
+ratatui.workspace = true
 sentry = { workspace = true, optional = true }
 tokio.workspace = true
 toml.workspace = true

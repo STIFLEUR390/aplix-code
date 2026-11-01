@@ -326,6 +326,12 @@ Le tableau des commandes disait « TUI » et la section des limites disait « pa
 deux ne peuvent pas être vrais. Le README est cohérent (TUI riche = v1.1, `ratatui`). V1 = flux
 texte simple ; `ratatui` + `crossterm` arrivent en V1.1.
 
+**Livré en v1.1** : `crates/apc-cli/src/tui.rs` — transcript scrollable, saisie une ligne, spinner,
+flux en direct, et le Permission Guard affiché dans la barre de statut (`y`/`n`) au lieu d'écraser
+la vue. `apc chat` ne l'utilise que si stdin **et** stdout sont des terminaux ; sinon il retombe sur
+le REPL texte, ce dont dépendent les tests et les scripts. La classification d'intention et `skills/`
+restent à faire.
+
 ### 8.7 Neuf crates conservés (dont `apc-memory` et `apc-plugins`)
 
 Le cahier des charges initial listait sept crates, sans `apc-memory` ni `apc-plugins`, alors que

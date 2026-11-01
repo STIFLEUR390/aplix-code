@@ -170,6 +170,30 @@ Verified 2026-11-01: a config error landed as `APLIX-CODE-1`, and `warn!(tool fa
 `crates/apc-agent/src/lib.rs:73` landed as `APLIX-CODE-2` with `level=warning`, `logger=apc_agent`,
 fields `tool` and `error` under "Rust Tracing Fields" — the error string carries the file path.
 
+## Chat view (TUI) — testing it
+
+`apc chat` opens the full-screen view only when stdin and stdout are terminals. A bare `script`
+gives the child a 0x0 window, so ratatui draws nothing; set the size on the pty:
+
+```python
+# /tmp/drive_tui.py — minimal pty driver
+import fcntl, os, pty, select, struct, time
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("sh", ["sh", "-c", "./target/debug/apc chat"])
+fcntl.ioctl(fd, 0x5414, struct.pack("HHHH", 40, 120, 0, 0))   # TIOCSWINSZ: 120x40
+time.sleep(1); os.write(fd, b"dis bonjour\r"); time.sleep(20); os.write(fd, b"\x1b")
+while select.select([fd], [], [], 0.1)[0]:
+    os.read(fd, 65536)   # strip ANSI / \r to read the screen
+```
+
+Verified that way: streaming shows `thinking…` then the text, `run_shell` on `rm -rf …` shows the
+`run it? … [y/N]` footer and `n` leaves the probe untouched, and a second turn recalls the first
+(history reloaded from the store).
+
+Piped runs stay on the REPL, which is what the tests exercise:
+`printf 'bonjour\nquit\n' | ./target/debug/apc chat`.
+
 ## Docs lookup (this machine)
 
 Context7 CLI, no global install needed:

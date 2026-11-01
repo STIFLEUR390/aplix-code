@@ -20,7 +20,7 @@
 | v0.4 | `apc model` + resumable downloads — **done** (empty catalog, SPEC §8.12) |
 | v0.5 | Opt-in telemetry: `tracing` logs + Sentry, off by default — **done** |
 | v1.0 | MVP: CI (`fmt`, clippy ×3 shapes, tests, size gate) + tagged releases Linux/macOS/Windows — **done** ; télémetrie compilée uniquement sur `--features telemetry` — **done** |
-| v1.1 | `ratatui` TUI, intent classification, `skills/` |
+| v1.1 | TUI `ratatui` (transcript + streaming + guard in the footer) — **done** ; classification d'intention et `skills/` — **à faire** |
 | v1.2 | SearXNG + Obscura plugins, dynamic plugin loading |
 | v1.3 | Long-term memory (SQLite + FTS5 / `sqlite-vec`) |
 | v2.0 | `apc serve` + Tauri |

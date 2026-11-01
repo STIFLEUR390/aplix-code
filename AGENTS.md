@@ -2,13 +2,13 @@
 
 ## State of the repo (check before assuming anything)
 
-v1.0 exists: a Cargo workspace (`crates/*`, 9 crates) whose crates all hold code — `apc-core`
+v1.1 is in progress: a Cargo workspace (`crates/*`, 9 crates) whose crates all hold code — `apc-core`
 (config + chat types), `apc-traits` (every trait), `apc-models` (HTTP adapters, SSE), `apc-memory`
 (JSONL sessions), `apc-decision` (heuristic guard + model store), `apc-tools` (file tools + guarded
 shell), `apc-agent` (tool loop), `apc-plugins` (static registry) and `apc-cli` (`init`, `config`,
-`run`, `chat`, `model`, `--version`). CI and tagged cross-platform releases live in
-`.github/workflows/`. Hooks, context compaction, intent classification and `skills/` do **not** exist
-yet. Read the tree before assuming a module exists.
+`run`, `chat` (REPL or full-screen view), `model`, `--version`). CI and tagged cross-platform
+releases live in `.github/workflows/`. Hooks, context compaction, intent classification and
+`skills/` do **not** exist yet. Read the tree before assuming a module exists.
 
 ## Sources of truth
 
@@ -94,6 +94,23 @@ dependency to `apc-agent` or `apc-cli`.
   `tool_calls` + `role: tool`, Anthropic `tool_use`/`tool_result` blocks). Tool arguments arrive as a
   raw JSON **string** because that is how providers stream them; the agent parses them once.
 
+## Chat view (v1.1)
+
+`crates/apc-cli/src/tui.rs` draws the full-screen view with `ratatui` + `crossterm`; the plain REPL
+still exists in `main::repl` and must keep working.
+
+- **Dispatch**: `tui::available()` = stdin *and* stdout are terminals. Piped input (every CLI test,
+  every script) takes the REPL, so a change to the view must never break `chat_persists_a_session_…`.
+- **One source of truth for history**: each turn reloads the session from `JsonlStore` and persists
+  what the agent appended, instead of threading `Vec<Message>` through the view.
+- **The guard runs inside the agent task and blocks.** `TuiApprover` sends the question over a
+  `std::sync::mpsc` channel; the render loop polls `try_recv()` every tick and answers on `y`/`n`.
+  Never `recv()` that channel from the async loop — it would freeze the view.
+- `Paragraph::line_count` is **private** in ratatui 0.29; the scroll offset comes from the small
+  `wrapped_height` helper. `Style::new().red()` does not exist either — use `Style::default().fg(…)`.
+- Test it through a real pty: `script` alone leaves the window 0x0 and ratatui draws nothing, so set
+  `TIOCSWINSZ` (see `.ai-memory/commands.md` for the driver script).
+
 ## Session memory (v0.2b)
 
 - `apc-memory::JsonlStore` writes one file per session under
@@ -151,7 +168,7 @@ dependency to `apc-agent` or `apc-cli`.
   - The `tracing` subscriber (fmt layer to stderr) is installed unconditionally, so
     `APC_LOG=debug|info|warn|error` gives local logs with no DSN and no network; default is `warn`.
     It is `with_target(false)`, so third-party `debug` events (hyper, reqwest) also print.
-  - Cost of the feature (`strip` + `lto`): 7 377 912 B with `--features telemetry` vs 5 643 912 B
+  - Cost of the feature (`strip` + `lto`): 7 377 912 B with `--features telemetry` vs 5 914 328 B
     without — the HTTP stack, not Sentry, dominates. Still inside the 15 MB budget, but re-measure
     whenever a dependency is updated.
 - **CI is the contract** (`.github/workflows/ci.yml`): `fmt`, `clippy -D warnings` and `test` in

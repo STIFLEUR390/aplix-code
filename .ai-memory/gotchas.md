@@ -80,6 +80,18 @@
   has been exercised here — the network tops out at a few KB/s. Treat it as tested logic, not as a
   field-proven download, and re-run it end to end the day a catalog entry exists.
 
+## Chat view (v1.1)
+
+- A pty without a window size draws **nothing**: `script -qec ./target/debug/apc chat /dev/null`
+  leaves the size 0x0, so ratatui emits cursor-hides and no text. Set `TIOCSWINSZ` on the pty first
+  (driver in `commands.md`).
+- The guard question is polled, not awaited: if you replace the `try_recv()` in the render loop with
+  `recv()`, the view freezes the moment a destructive command is scored.
+- `ratatui 0.29` made `Paragraph::line_count` private and dropped `Style::new().red()`; both were
+  used by the first draft and failed to compile.
+- Escape quits even mid-turn: the agent task keeps running until the runtime drops, so nothing is
+  persisted for the cut turn.
+
 ## Telemetry / Sentry (dev phase)
 
 - Two independent gates, both required: `telemetry = true` in the resolved config **and** a DSN in

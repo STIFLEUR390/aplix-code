@@ -15,6 +15,7 @@ use apc_memory::JsonlStore;
 use apc_traits::{Approver, DecisionProvider, MemoryStore};
 
 mod telemetry;
+mod tui;
 
 /// `apc --version` prints the CLI version and the decision model (SPEC.md §2.1).
 const VERSION: &str = concat!(
@@ -208,7 +209,7 @@ fn telemetry_enabled(cli: &Cli) -> bool {
 
 async fn run_prompt(args: &RunArgs) -> Result<()> {
     let (loaded, _) = resolve(&args.overrides)?;
-    let agent = agent(&loaded.config)?;
+    let agent = agent(&loaded.config, std::sync::Arc::new(StdinApprover))?;
     let mut messages = vec![Message::user(args.prompt.join(" "))];
     agent.run(&mut messages, print_delta).await?;
     println!();
@@ -217,26 +218,44 @@ async fn run_prompt(args: &RunArgs) -> Result<()> {
 
 async fn chat(args: &ChatArgs) -> Result<()> {
     let (loaded, _) = resolve(&args.overrides)?;
-    let agent = agent(&loaded.config)?;
     let store = JsonlStore::new()?;
+    let session = opened_session(&store, args.r#continue).await?;
+    let messages = store.load(Some(&session)).await?;
 
-    let mut messages = Vec::new();
-    let session = if args.r#continue {
-        match store.latest_session()? {
-            Some(session) => {
-                messages = store.load(Some(&session)).await?;
-                eprintln!(
-                    "continuing session {} ({} messages)",
-                    session,
-                    messages.len()
-                );
-                session
-            }
-            None => store.new_session(),
-        }
-    } else {
-        store.new_session()
+    if !tui::available() {
+        return repl(loaded.config, store, session, messages).await;
+    }
+
+    let (approver, asks) = tui::TuiApprover::channel();
+    let agent = agent(&loaded.config, std::sync::Arc::new(approver))?;
+    tui::chat(std::sync::Arc::new(agent), session, messages, asks).await
+}
+
+/// Resumes the latest session or starts a new one.
+async fn opened_session(store: &JsonlStore, resume: bool) -> Result<apc_core::chat::SessionId> {
+    if !resume {
+        return Ok(store.new_session());
+    }
+    let Some(session) = store.latest_session()? else {
+        return Ok(store.new_session());
     };
+    let messages = store.load(Some(&session)).await?;
+    eprintln!(
+        "continuing session {} ({} messages)",
+        session,
+        messages.len()
+    );
+    Ok(session)
+}
+
+/// The plain stdin/stdout REPL, used whenever the view has no terminal to draw on.
+async fn repl(
+    config: config::Config,
+    store: JsonlStore,
+    session: apc_core::chat::SessionId,
+    mut messages: Vec<Message>,
+) -> Result<()> {
+    let agent = agent(&config, std::sync::Arc::new(StdinApprover))?;
 
     loop {
         print!("› ");
@@ -289,11 +308,13 @@ fn decision_provider(_endpoint: Option<&str>) -> std::sync::Arc<dyn DecisionProv
     std::sync::Arc::new(apc_decision::HeuristicProvider)
 }
 
-fn agent(config: &config::Config) -> Result<apc_agent::Agent> {
+fn agent(
+    config: &config::Config,
+    approver: std::sync::Arc<dyn Approver>,
+) -> Result<apc_agent::Agent> {
     let adapter: std::sync::Arc<dyn apc_traits::ModelAdapter> =
         std::sync::Arc::from(apc_models::build(&config.provider)?);
     let decision = decision_provider(config.decision.endpoint.as_deref());
-    let approver: std::sync::Arc<dyn Approver> = std::sync::Arc::new(StdinApprover);
     let tools = apc_plugins::default_tools(
         std::env::current_dir()?,
         decision,
