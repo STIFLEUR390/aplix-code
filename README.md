@@ -1,8 +1,3 @@
-Voici une proposition de `README.md` prête à l'emploi, honnête sur le statut (Work In Progress), mais suffisamment structurée et ambitieuse pour attirer des contributeurs et susciter l'intérêt dès le premier jour.
-
----
-
-```markdown
 <div align="center">
 
 # ⚡ aplix code (`apc`)
