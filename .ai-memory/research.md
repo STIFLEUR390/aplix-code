@@ -1,5 +1,16 @@
 # Research log
 
+## Reference projects (links verified 2026-11-01)
+
+- `rig` — source <https://github.com/0xPlaygrounds/rig>, docs <https://rig.rs/docs>. Not a
+  dependency: we read it for agent-loop and provider-abstraction ideas, and its types never enter
+  our crates (SPEC §8.2).
+- `harness-rs` — <https://github.com/liliang-cn/harness-rs> (the "everything is a plugin" layout
+  behind `apc-traits` + `apc-plugins`).
+- `OpenCode` — <https://github.com/anomalyco/opencode> (server-first design target for `apc serve`).
+- `local-jev` — <https://github.com/ronitgupta138/Local-Jev>.
+
+
 Two tiers: **verified** (read from published docs via Context7, dated) and **unverified** (chosen by
 `SPEC.md` or the candidate list, nothing read yet). Re-check with `npx ctx7@latest docs …` before
 relying on an unverified entry.

@@ -262,10 +262,10 @@ If you want to help but don't know where to start, look for issues tagged [`good
 
 - **[Codex CLI](https://github.com/openai/codex)** — for showing how far sandboxing and modular workspace design can go.
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — for the reference UX of a coding agent.
-- **[harness-rs](https://github.com/harness-rs/harness)** — for the most elegant "everything is a plugin" agent architecture in Rust.
-- **[OpenCode](https://github.com/sst/opencode)** — for the server-first, client-agnostic architecture we're adopting for `apc serve`.
-- **[local-jev](https://github.com/ronitgupta138/local-jev)** — for proving that fast, local decision models are not only possible, but practical.
-- **[rig](https://github.com/0xPlaydust/rig)** and the Rust AI ecosystem — for showing what agent loops and provider abstractions can look like.
+- **[harness-rs](https://github.com/liliang-cn/harness-rs)** — for the most elegant "everything is a plugin" agent architecture in Rust.
+- **[OpenCode](https://github.com/anomalyco/opencode)** — for the server-first, client-agnostic architecture we're adopting for `apc serve`.
+- **[local-jev](https://github.com/ronitgupta138/Local-Jev)** — for the minimum/choice decision API our `DecisionProvider` trait is modelled on.
+- **[rig](https://github.com/0xPlaygrounds/rig)** ([docs](https://rig.rs/docs)) and the Rust AI ecosystem — for showing what agent loops and provider abstractions can look like.
 
 If we forgot someone, please open an issue — it's not intentional.
 
