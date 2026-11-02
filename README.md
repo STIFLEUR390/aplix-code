@@ -54,7 +54,7 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ## ✨ Features
 
-### ✅ Working today (`v1.1`)
+### ✅ Working today (`v2.3`)
 
 - **`apc run "<prompt>"`** — One-shot agent mode: streams the answer, calls tools, guards shell.
 - **`apc chat`** — Full-screen chat view (`ratatui`): scrollable transcript, a status bar, slash
@@ -65,7 +65,15 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 - **`apc setting`** — Write a setting without editing TOML by hand: `apc setting telemetry on`,
   `apc setting decision.threshold 0.9`, `apc setting tools.searxng_url http://127.0.0.1:8888`.
   Goes to `~/.config/aplix/apc.toml` (or `./apc.toml` with `--project`), refuses an unknown key, and
-  rewrites the file without its comments.
+  rewrites the file without its comments. `apc setting` alone lists every key with the layer it came
+  from.
+- **`apc serve`** — The same agent behind a loopback HTTP API (`127.0.0.1:7717`, SSE), gated by a
+  token written to `serve.token`: `POST /v1/run`, `GET /v1/sessions`, `GET /v1/config`,
+  `GET /v1/providers` and `POST /v1/confirm`, which is how a desktop client answers the Permission
+  Guard instead of a terminal prompt.
+- **`apc-desktop`** — A Tauri window over that API: streamed transcript, provider and model picker,
+  a stop button, the guard prompt inline. It is a separate crate excluded from the root workspace, so
+  the `apc` binary never links GTK or WebKit.
 - **Built-in tools**: `read_file`, `write_file`, `list_dir`, `run_shell`, `fetch_page` (main-content
   extraction as Markdown via `rs-trafilatura`, boilerplate dropped).
 - **Private web search** — `web_search` goes through your own SearXNG instance
@@ -202,7 +210,8 @@ aplix-code/
 │   ├── apc-models/     # LLM provider adapters (direct HTTP, SSE streaming).
 │   ├── apc-memory/     # Session history + FTS5 recall (SQLite, imports old JSONL sessions).
 │   ├── apc-plugins/    # Static plugin registry (dynamic loading lands in v1.2).
-│   └── apc-cli/        # The `apc` binary.
+│   ├── apc-cli/        # The `apc` binary: run, chat, serve, model, setting, config, init.
+│   └── apc-desktop/    # Optional Tauri window over `apc serve`; not in the root workspace.
 └── .ai-memory/         # Notes for coding agents (start at `index.md`).
 ```
 
@@ -297,10 +306,13 @@ cargo test --workspace                        # fmt + clippy -D warnings are par
 | **v0.5** | Opt-in telemetry: local `tracing` logs + Sentry, off by default |
 | **v1.0** | MVP: CLI, docs, CI matrix and cross-platform release builds |
 | **v1.1** | `ratatui` TUI, intent classification, project `skills/` |
-| **v1.2** | SearXNG + Obscura plugins |
+| **v1.2** | SearXNG web search + `fetch_page` (main-content extraction) |
+| **v1.2b** | Decided against `rig`: the adapters and the agent loop stay ours (`SPEC.md` §8.2) |
 | **v1.3** | Long-term memory (SQLite + FTS5, old JSONL sessions imported) |
 | **v2.0** | `apc serve` (loopback + token, SSE) + `apc-desktop`, a Tauri window over it |
 | **v2.1** | Advanced sandboxing (Landlock/Seatbelt) or WASM plugins |
+| **v2.2** | Chat view modes (`plan`/`build`), model picker, slash commands |
+| **v2.3** | `apc setting`, and `apc model download` resuming every published model |
 
 ---
 
