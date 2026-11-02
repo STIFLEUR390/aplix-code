@@ -276,6 +276,20 @@ the reason is the most likely regression here:
 - Real local-jev on this machine: `local-jev serve --port 8091` (8080 is Apache), then
   `APC_DECISION_ENDPOINT=http://127.0.0.1:8091` on a binary built with `--features open-jev`.
 
+## Context bounds (v2.4)
+
+- Nothing compacts the conversation: `Agent::run` re-sends the whole `Vec<Message>` every turn and
+  never removes an entry. The only bounds are `MAX_STEPS` (8 tool rounds) and the per-call output
+  caps — `tools.max_output_bytes` (32768) for `read_file`/`list_dir`/`run_shell`,
+  `tools.fetch_max_bytes` (65536) for `fetch_page`. Both go through `apc_tools::truncate`, which cuts
+  on a char boundary and appends `[truncated at N of M bytes]`.
+- The cap is per call, not cumulative: eight `read_file` calls of 32 KB still fill the window. If a
+  session starts hitting provider limits, that is the missing compaction, not a bad cap.
+- Do not reach for `tiktoken-rs` to "measure properly": it only implements OpenAI's BPE, so the
+  number would be wrong for Anthropic, Ollama, Groq and local gateways. Count bytes, or count per
+  provider where the provider documents it.
+- A new tool that returns text must take a cap in its constructor, like `ReadFile::new(root, max)`.
+
 ## Model downloads and sessions
 
 - `~350 MB` for `open-jev`; the download must be resumable (`Range`) and SHA-256 verified, writing to

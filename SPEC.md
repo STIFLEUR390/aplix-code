@@ -625,11 +625,32 @@ ajoute le sien pour CORS, et le binaire release passe de 10 054 128 à **10 492 
 toujours sous la barre des 15 Mo. Le binaire de bureau n'entre pas dans ce budget (il est hors
 workspace) et n'a pas été pesé.
 
+### 8.16 Le contexte n'est pas compacté, mais chaque résultat d'outil est plafonné
+
+`apc_agent::Agent::run` renvoie la conversation entière à chaque tour et n'en retire jamais rien :
+il n'y a ni compaction, ni budget de tokens, ni troncature de l'historique (SPEC §9). Ce qui borne
+le contexte est donc explicite, et une seule chose manquait : le contenu que les outils locaux jettent
+dedans.
+
+- `tools.max_output_bytes` (32768) s'applique à `read_file`, `list_dir` et `run_shell`, via le même
+  `truncate()` que `fetch_page` : la coupe tombe sur une frontière de caractère et le texte se termine
+  par `[truncated at N of M bytes]`, donc le modèle sait qu'il lui manque quelque chose.
+- `tools.fetch_max_bytes` (65536) reste séparé : une page web et la sortie d'un build n'ont pas la
+  même valeur pour le modèle.
+- La troncature est **par appel d'outil**, pas cumulée : huit tours d'outils peuvent quand même
+  remplir la fenêtre.
+- Pas de compteur de tokens : `tiktoken-rs` ne connaît que les encodages OpenAI, donc un budget en
+  tokens serait faux pour Anthropic, Ollama, Groq et les passerelles locales — six fournisseurs pour
+  deux dialectes. Le plafond en octets est identique pour tous et ne coûte aucune dépendance.
+- La compaction (résumer les vieux tours) reste hors périmètre V1 ; c'est elle qui demandera une
+  mesure, pas un plafond arbitraire.
+
 ---
 
 ## 9. Hors périmètre V1 (explicite)
 
 1. Application Tauri : fenêtre posée dans `crates/apc-desktop`, hors workspace (§8.15) ; il reste à en faire un paquet installable (`tauri bundle`), ce que ce dépôt ne fait pas.
+2. Compaction du contexte : `MAX_STEPS` et `tools.max_output_bytes` bornent un tour, pas une session ; une session longue grossit jusqu'au refus du fournisseur (§8.16).
 2. Recherche web (SearXNG) et extraction (Obscura, Firecrawl, Crawl4AI).
 3. Knowledge graph et distillation de la mémoire : la v1.3 livre SQLite + FTS5, rien de plus.
 4. Chargement dynamique de plugins (`.so`/`.dylib`/WASM) : les traits existent, les plugins V1 sont

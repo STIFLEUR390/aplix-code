@@ -48,6 +48,27 @@ fn outside(path: &str) -> Error {
     Error::Tool(format!("`{path}` is outside the working directory"))
 }
 
+/// Cut `text` at `max` bytes on a char boundary, saying how much was dropped.
+///
+/// Every tool that returns file contents or process output goes through it: the model's context
+/// is what the tool result becomes, and nothing else bounds it (SPEC.md §8.16).
+pub(crate) fn truncate(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_owned();
+    }
+    let cut = text
+        .char_indices()
+        .map(|(at, _)| at)
+        .take_while(|at| *at <= max)
+        .last()
+        .unwrap_or(0);
+    format!(
+        "{}\n[truncated at {max} of {} bytes]",
+        &text[..cut],
+        text.len()
+    )
+}
+
 fn string(args: &Value, key: &str) -> Result<String> {
     args[key]
         .as_str()
@@ -58,12 +79,13 @@ fn string(args: &Value, key: &str) -> Result<String> {
 /// Read a text file.
 pub struct ReadFile {
     root: PathBuf,
+    max_bytes: usize,
 }
 
 impl ReadFile {
-    /// Read relative to `root`.
-    pub fn new(root: PathBuf) -> Self {
-        Self { root }
+    /// Read relative to `root`, keeping at most `max_bytes` for the model.
+    pub fn new(root: PathBuf, max_bytes: usize) -> Self {
+        Self { root, max_bytes }
     }
 }
 
@@ -87,8 +109,9 @@ impl Tool for ReadFile {
 
     async fn execute(&self, args: Value) -> Result<String> {
         let path = resolve(&self.root, &string(&args, "path")?)?;
-        std::fs::read_to_string(&path)
-            .map_err(|error| Error::Tool(format!("{}: {error}", path.display())))
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| Error::Tool(format!("{}: {error}", path.display())))?;
+        Ok(truncate(&text, self.max_bytes))
     }
 }
 
@@ -145,12 +168,13 @@ impl Tool for WriteFile {
 /// List a directory, one entry per line, directories suffixed with `/`.
 pub struct ListDir {
     root: PathBuf,
+    max_bytes: usize,
 }
 
 impl ListDir {
-    /// List relative to `root`.
-    pub fn new(root: PathBuf) -> Self {
-        Self { root }
+    /// List relative to `root`, keeping at most `max_bytes` for the model.
+    pub fn new(root: PathBuf, max_bytes: usize) -> Self {
+        Self { root, max_bytes }
     }
 }
 
@@ -187,7 +211,7 @@ impl Tool for ListDir {
             });
         }
         names.sort();
-        Ok(names.join("\n"))
+        Ok(truncate(&names.join("\n"), self.max_bytes))
     }
 }
 
@@ -199,6 +223,7 @@ pub struct RunShell {
     decision: Arc<dyn DecisionProvider>,
     approver: Arc<dyn Approver>,
     threshold: f64,
+    max_bytes: usize,
 }
 
 impl RunShell {
@@ -208,12 +233,14 @@ impl RunShell {
         decision: Arc<dyn DecisionProvider>,
         approver: Arc<dyn Approver>,
         threshold: f64,
+        max_bytes: usize,
     ) -> Self {
         Self {
             root,
             decision,
             approver,
             threshold,
+            max_bytes,
         }
     }
 }
@@ -256,7 +283,7 @@ impl Tool for RunShell {
         if text.trim().is_empty() {
             text = format!("(no output, exit {})", output.status);
         }
-        Ok(text)
+        Ok(truncate(&text, self.max_bytes))
     }
 }
 
@@ -303,6 +330,7 @@ mod tests {
             Arc::new(Yes(decision)),
             Arc::new(Answer(approver)),
             f64::midpoint(0.0, 1.0),
+            32_768,
         )
     }
 
@@ -334,9 +362,38 @@ mod tests {
     async fn leaving_the_working_directory_is_refused() {
         let root = std::env::temp_dir();
         assert!(resolve(&root, "../secret").is_err());
-        assert!(ReadFile::new(root)
+        assert!(ReadFile::new(root, 32_768)
             .execute(json!({ "path": "../../etc/passwd" }))
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn a_big_file_and_a_big_output_are_cut_for_the_model() {
+        let dir = std::env::temp_dir().join(format!("apc-cut-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("sandbox");
+        std::fs::write(dir.join("big.txt"), "é".repeat(100)).expect("fixture");
+
+        let read = ReadFile::new(dir.clone(), 40)
+            .execute(json!({ "path": "big.txt" }))
+            .await
+            .expect("reads");
+        assert!(read.contains("[truncated at 40 of 200 bytes]"), "{read}");
+
+        // The shell output takes the same path, and the cut never splits a char.
+        let run = RunShell::new(
+            dir.clone(),
+            Arc::new(Yes(0.0)),
+            Arc::new(Answer(true)),
+            0.5,
+            40,
+        )
+        .execute(json!({ "command": "printf 'é%.0s' $(seq 100)" }))
+        .await
+        .expect("runs");
+        assert!(run.contains("[truncated at 40 of 200 bytes]"), "{run}");
+        assert!(run.starts_with("é"), "{run}");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

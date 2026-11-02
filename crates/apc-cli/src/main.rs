@@ -728,6 +728,10 @@ fn show_config(args: &Overrides) -> Result<()> {
             "tools.fetch_max_bytes",
             loaded.config.tools.fetch_max_bytes.to_string(),
         ),
+        (
+            "tools.max_output_bytes",
+            loaded.config.tools.max_output_bytes.to_string(),
+        ),
         ("telemetry", loaded.config.telemetry.to_string()),
     ];
     let rows: Vec<(String, String, Source)> = rows

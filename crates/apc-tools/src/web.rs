@@ -174,29 +174,11 @@ impl Tool for FetchPage {
         let page = rs_trafilatura::extract_with_options(&html, &options)
             .map_err(|error| Error::Tool(format!("{url}: {error}")))?;
 
-        Ok(truncate(
+        Ok(crate::truncate(
             &page.content_markdown.unwrap_or(page.content_text),
             self.max_bytes,
         ))
     }
-}
-
-/// Cut `text` at `max` bytes on a char boundary, saying how much was dropped.
-fn truncate(text: &str, max: usize) -> String {
-    if text.len() <= max {
-        return text.to_owned();
-    }
-    let cut = text
-        .char_indices()
-        .map(|(at, _)| at)
-        .take_while(|at| *at <= max)
-        .last()
-        .unwrap_or(0);
-    format!(
-        "{}\n[truncated at {max} of {} bytes]",
-        &text[..cut],
-        text.len()
-    )
 }
 
 #[cfg(test)]

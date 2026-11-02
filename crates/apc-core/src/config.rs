@@ -42,6 +42,8 @@ threshold = 0.8
 # searxng_url = "http://127.0.0.1:8888"
 # Bytes of a fetched page handed to the model; the rest is dropped.
 fetch_max_bytes = 65536
+# Bytes of any other tool result (`read_file`, `list_dir`, `run_shell`) handed to the model.
+max_output_bytes = 32768
 "#;
 
 /// Fully resolved configuration.
@@ -110,6 +112,8 @@ pub struct Tools {
     pub searxng_url: Option<String>,
     /// Bytes of a fetched page kept for the model.
     pub fetch_max_bytes: usize,
+    /// Bytes of any other tool result kept for the model; the rest is dropped, not persisted.
+    pub max_output_bytes: usize,
 }
 
 impl Default for Tools {
@@ -117,6 +121,7 @@ impl Default for Tools {
         Self {
             searxng_url: None,
             fetch_max_bytes: 65_536,
+            max_output_bytes: 32_768,
         }
     }
 }

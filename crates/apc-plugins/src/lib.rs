@@ -23,9 +23,10 @@ pub fn default_tools(
     config: &Config,
     mode: Mode,
 ) -> Vec<Arc<dyn Tool>> {
+    let max_bytes = config.tools.max_output_bytes;
     let mut tools: Vec<Arc<dyn Tool>> = vec![
-        Arc::new(ReadFile::new(root.clone())),
-        Arc::new(ListDir::new(root.clone())),
+        Arc::new(ReadFile::new(root.clone(), max_bytes)),
+        Arc::new(ListDir::new(root.clone(), max_bytes)),
         Arc::new(FetchPage::new(config.tools.fetch_max_bytes)),
     ];
     if mode == Mode::Build {
@@ -35,6 +36,7 @@ pub fn default_tools(
             decision,
             approver,
             config.decision.threshold,
+            max_bytes,
         )));
     }
     if let Some(url) = &config.tools.searxng_url {

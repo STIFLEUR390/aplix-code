@@ -184,8 +184,16 @@ still exists in `main::repl` and must keep working.
   offered, and `crates/apc-cli/tests/cli.rs::an_unconfigured_search_tool_is_never_offered_to_the_model`
   pins that. `fetch_page` needs no service, so it is always registered; only `tools.fetch_max_bytes`
   (65536) tunes it.
-- `apc_plugins::default_tools(root, decision, approver, config)` takes the whole `&Config` now: the
-  threshold and the tool URLs come from one place, and adding a tool stops growing the parameter list.
+- `apc_plugins::default_tools(root, decision, approver, config, mode)` takes the whole `&Config`: the
+  threshold, the tool URLs and the output caps come from one place, and adding a tool stops growing
+  the parameter list.
+- **Every tool result is capped** (SPEC §8.16): `read_file`, `list_dir` and `run_shell` go through
+  the shared `apc_tools::truncate` with `tools.max_output_bytes` (32 KB), `fetch_page` through
+  `tools.fetch_max_bytes` (64 KB). The cut lands on a char boundary and ends with
+  `[truncated at N of M bytes]`, so the model knows it is missing something. It is per call, not
+  cumulative, and nothing else bounds the context: there is no compaction and no token budget
+  (`tiktoken-rs` only knows OpenAI encodings, so a token count would be wrong for half the
+  providers). A new tool that returns text must take one of the two caps.
 - `fetch_page` is **not** Obscura: `obscura serve` speaks CDP (WebSocket) only, no WebSocket crate is
   cached offline, and the `obscura` crate builds V8 from source. The reasoning, and
   `obscura mcp --http` as the way back, are in `SPEC.md` §8.13. Don't reintroduce an
