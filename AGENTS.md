@@ -348,6 +348,10 @@ PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
 cargo build
 ```
 
+`install.sh` / `uninstall.sh` are POSIX `sh` and are the supported install and update path. The asset
+names are shared with `.github/workflows/release.yml` (`apc-<runner.os>-<runner.arch>.tar.gz`, and a
+`<name>.sha256` named after the package, not the archive) — change one side, change the other.
+
 The CLI tests spawn `CARGO_BIN_EXE_apc` with a throwaway `HOME`/`XDG_CONFIG_HOME` and clear the
 `APC_*` variables, so they never read your real `~/.config/aplix/apc.toml` or your `.env` (the child's
 working directory is a temp sandbox, so `./.env` is absent). Keep them that way: a test that depends

@@ -81,7 +81,8 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ### 📦 Still planned
 
-- **crates.io publication** — `apc` installs from source or a release binary today (`SPEC.md` §7).
+- **crates.io publication** — `apc` installs from source, a release binary, or `install.sh` today
+  (`SPEC.md` §7).
 
 ### 🔮 Post-MVP (V1.x – V2)
 
@@ -96,24 +97,62 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ## 🚀 Quick start
 
-> **Note:** `apc` is not yet on crates.io. Use a release binary, or install from source.
+### Install
 
 ```bash
-# Option A — prebuilt binary: https://github.com/STIFLEUR390/aplix-code/releases
-#   apc-Linux-X64.tar.gz, apc-macOS-ARM64.tar.gz, apc-Windows-X64.zip (+ .sha256)
+curl -fsSL https://raw.githubusercontent.com/STIFLEUR390/aplix-code/main/install.sh | sh
+```
 
-# Option B — from source (Rust 1.80+)
+That is the whole install: it picks the archive for your OS and architecture, verifies its SHA-256
+against the published `.sha256`, and drops `apc` in `~/.local/bin`. No sudo, no system dependency —
+TLS is `rustls`, there is no OpenSSL to find.
+
+| Variable | Effect |
+| :--- | :--- |
+| `APC_INSTALL_DIR` | Where the binary goes (default `~/.local/bin`). |
+| `APC_VERSION` | Pin a release tag (`v1.2.0`) instead of the latest one. |
+
+If the script says `~/.local/bin` is not in your `PATH`, add it to your shell profile:
+`export PATH="$HOME/.local/bin:$PATH"`.
+
+**Update** is the same command: re-run it and it replaces the binary, telling you which version it is
+replacing. `APC_INSTALL_DIR` must match the one you installed with.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/STIFLEUR390/aplix-code/main/install.sh | sh
+```
+
+### Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/STIFLEUR390/aplix-code/main/uninstall.sh | sh
+# ...or, from a checkout: sh uninstall.sh [--purge]
+```
+
+The binary goes; your config, sessions and models stay. `--purge` also deletes `~/.config/aplix`
+(the `apc.toml` you wrote) and `~/.local/share/aplix` (`memory.db`, the serve token, downloaded
+models). Nothing else is touched — no `PATH` edit, no shell profile edit.
+
+Prefer to do it by hand? Grab `apc-Linux-X64.tar.gz`, `apc-macOS-ARM64.tar.gz` or
+`apc-Windows-X64.zip` from [the releases page](https://github.com/STIFLEUR390/aplix-code/releases) —
+each ships with its `.sha256`.
+
+### From source
+
+```bash
 git clone https://github.com/STIFLEUR390/aplix-code.git
 cd aplix-code
 cargo install --path crates/apc-cli --locked   # add --offline once the crates are cached
+```
 
-# Configure any OpenAI-compatible provider
-export OPENAI_API_KEY="sk-..."
+### First run
+
+```bash
+export OPENAI_API_KEY="sk-..."   # or point apc.toml at Ollama / any compatible gateway
 
 apc init          # writes a commented apc.toml
 apc config        # every value, and which layer supplied it
 
-# Start coding
 apc run "Add a progress bar to the TUI in src/ui.rs"
 ```
 
