@@ -62,6 +62,10 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
   Permission Guard prompt in the status bar; falls back to a plain REPL when stdin/stdout is piped.
 - **`apc init`** — Generate a commented `apc.toml` config file.
 - **`apc config`** — Print the effective configuration and which layer supplied each key.
+- **`apc setting`** — Write a setting without editing TOML by hand: `apc setting telemetry on`,
+  `apc setting decision.threshold 0.9`, `apc setting tools.searxng_url http://127.0.0.1:8888`.
+  Goes to `~/.config/aplix/apc.toml` (or `./apc.toml` with `--project`), refuses an unknown key, and
+  rewrites the file without its comments.
 - **Built-in tools**: `read_file`, `write_file`, `list_dir`, `run_shell`, `fetch_page` (main-content
   extraction as Markdown via `rs-trafilatura`, boilerplate dropped).
 - **Private web search** — `web_search` goes through your own SearXNG instance
@@ -77,7 +81,7 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
   sessions said about the prompt (FTS5).
 - **Local logs** — `APC_LOG=debug|info|warn|error` on stderr, no network, no DSN needed.
 - **Opt-in error reporting** — Sentry-compatible, compiled out by default (`--features telemetry` to build it in), off without a DSN and a config flag.
-- **`apc model <cmd>`** — Manage local decision models (`list`, `download`, `status`, `verify`, `remove`), with resumable, SHA-256 verified downloads. The catalog is empty for now: no upstream artifact exists (`SPEC.md` §8.12).
+- **`apc model <cmd>`** — Manage local decision models (`list`, `download [id]`, `status`, `verify`, `remove`), with resumable, SHA-256 verified downloads; `apc model download` with no id resumes every one of them. The catalog is empty for now: no upstream artifact exists (`SPEC.md` §8.12).
 - **CI and releases** — `fmt`, `clippy -D warnings` and tests in three feature shapes on every push, a 15 MB size gate, and tagged builds for Linux, macOS and Windows.
 
 ### 📦 Still planned
@@ -170,6 +174,7 @@ export OPENAI_API_KEY="sk-..."   # or point apc.toml at Ollama / any compatible 
 
 apc init          # writes a commented apc.toml
 apc config        # every value, and which layer supplied it
+apc setting telemetry on   # write one setting into ~/.config/aplix/apc.toml
 
 apc run "Add a progress bar to the TUI in src/ui.rs"
 ```

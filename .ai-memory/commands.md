@@ -116,10 +116,15 @@ printf 'Quelle est la capitale de la France ?\nquit\n' | cargo run -p apc-cli --
 ```bash
 apc init                        # writes a commented apc.toml
 apc config                      # effective config + which layer set each key (P1)
+apc setting                     # same table, plus how to write one
+apc setting telemetry on        # writes ~/.config/aplix/apc.toml (--project: ./apc.toml)
+apc setting decision.threshold 0.9
+apc setting tools.searxng_url http://127.0.0.1:8888
 apc run "<prompt>"              # v0.2, streams
 apc chat [--continue]           # v0.2 REPL, sessions persisted (v0.2b)
 apc model list                  # works; says nothing is published (empty catalog)
 apc model download <id>         # resumes a .part, verifies SHA-256, then renames
+apc model download              # every published model: re-run to finish a killed one
 apc model status <id>
 apc model verify <id>
 apc model remove <id>

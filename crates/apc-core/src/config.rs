@@ -347,7 +347,8 @@ fn collect_leaves(
     }
 }
 
-fn set_path(table: &mut toml::Table, path: &str, value: toml::Value) {
+/// Write `dotted.key = value` into a document, creating the tables it needs.
+pub fn set_path(table: &mut toml::Table, path: &str, value: toml::Value) {
     match path.split_once('.') {
         None => {
             table.insert(path.to_owned(), value);

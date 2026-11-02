@@ -25,6 +25,12 @@
   flag layers go through the same path, labelled `environment` / `command line`.
 - Empty `APC_*` values are ignored (treated as unset). `APC_TELEMETRY` accepts
   `1/0/true/false/yes/no/on/off`, not just TOML booleans.
+- `apc setting <key> <value>` re-serialises the target file through `toml::to_string_pretty`, so
+  **comments are lost** (it says so on stderr) and key order follows the table. It validates with
+  `config::resolve` first, so a typo or `decision.threshold = 2` never reaches the disk.
+- Debug builds read `./.env` (`load_dotenv` in `crates/apc-cli/src/main.rs`), so `apc config` or
+  `apc setting` run from this repo report the *env* layer from that file. Run them elsewhere, or
+  unset `APC_*`, before believing a layer name.
 
 ## Providers and streaming (v0.2)
 

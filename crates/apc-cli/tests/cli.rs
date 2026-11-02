@@ -409,6 +409,40 @@ fn model_list_says_nothing_is_published_yet() {
 }
 
 #[test]
+fn setting_writes_the_user_configuration_and_refuses_a_typo() {
+    let dir = sandbox("setting");
+    let out = apc(&dir, &["setting", "telemetry", "on"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+
+    let written = std::fs::read_to_string(dir.join("xdg/aplix/apc.toml")).expect("user config");
+    assert!(written.contains("telemetry = true"), "{written}");
+
+    let out = apc(&dir, &["setting", "telemetry"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        stdout(&out).contains("telemetry = true  (user)"),
+        "{}",
+        stdout(&out)
+    );
+
+    let out = apc(&dir, &["setting", "nonsense", "1"]);
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("nonsense"), "{}", stderr(&out));
+}
+
+#[test]
+fn model_download_without_an_id_says_there_is_nothing_to_fetch() {
+    let dir = sandbox("model-download-all");
+    let out = apc(&dir, &["model", "download"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        stdout(&out).contains("nothing to download"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
 fn model_download_names_the_unknown_id() {
     let dir = sandbox("model-download");
     let out = apc(&dir, &["model", "download", "open-jev"]);

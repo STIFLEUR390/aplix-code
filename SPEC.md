@@ -36,9 +36,10 @@ Objectifs mesurables :
 | `apc run "<prompt>"` | Session d'agent non interactive (one-shot) : exécute la tâche et affiche le résultat. | **P0** |
 | `apc chat` | Session interactive : vue plein écran (`ratatui`) sur un terminal, avec `/mode`, `/model`, `/skills`, `/skill` ; REPL ligne par ligne quand l'entrée est pipée. | **P0** |
 | `apc init` | Crée un `apc.toml` commenté dans le répertoire courant. | **P0** |
-| `apc model <cmd>` | Gère les modèles de décision locaux : `list`, `download`, `status`, `verify`, `remove`. | **P0** |
+| `apc model <cmd>` | Gère les modèles de décision locaux : `list`, `download [id]` (sans id : tous, reprise incluse), `status`, `verify`, `remove`. | **P0** |
 | `apc --version` / `-V` | Version de `apc` **et** du modèle de décision chargé. | **P0** |
 | `apc config` | Affiche la configuration effective et sa provenance par couche. | **P1** |
+| `apc setting [clé] [valeur]` | Lit un réglage, ou l'écrit dans `~/.config/aplix/apc.toml` (`--project` pour `./apc.toml`). Ex. `apc setting telemetry on`. | **P2** (v2.3) |
 | `apc serve` | Sert le même agent sur `127.0.0.1` pour un client (Tauri, éditeur) : flux SSE, sessions, config, confirmations. | **P2** (v2.0) |
 
 `apc chat --continue` reprend la dernière session.
@@ -620,7 +621,7 @@ permissif (`tower-http`, feature `cors`) : la webview est une origine différent
 **Coût mesuré :** `axum` 0.7 ajoute `axum`, `axum-core`, `matchit`, `mime` et `serde_path_to_error`
 au graphe (5 paquets ; `hyper`, `tower`, `http-body` étaient déjà là pour `reqwest`), `tower-http`
 ajoute le sien pour CORS, et le binaire release passe de 10 054 128 à **10 492 592** octets
-(v2.2, commandes et modes de la vue : 10 504 880) —
+(v2.2, commandes et modes de la vue : 10 504 880 ; v2.3, `apc setting` + reprise des modèles : 10 635 952) —
 toujours sous la barre des 15 Mo. Le binaire de bureau n'entre pas dans ce budget (il est hors
 workspace) et n'a pas été pesé.
 

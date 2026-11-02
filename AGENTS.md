@@ -274,6 +274,11 @@ three-OS release, or the 15 MB gate. It has its own `Cargo.lock`; build it from 
 - Layers: defaults < user (`~/.config/aplix/apc.toml`, via `directories`) < `./apc.toml` <
   `./apc.local.toml` < `APC_PROVIDER` / `APC_MODEL` / `APC_BASE_URL` / `APC_PERMISSION_THRESHOLD` /
   `APC_DECISION_ENDPOINT` / `APC_TELEMETRY` < flags. `apc config` prints the winning layer per key.
+- `apc setting <key> <value>` writes that file for the user (`--project` for `./apc.toml`) through
+  `config::set_path`, then re-parses the result so a typo or an out-of-range threshold is refused
+  **before** the write. It re-serialises the document, so comments in the target file are dropped —
+  say so on stderr. `on`/`off`/`yes`/`no` become booleans; everything else keeps `scalar`'s typing.
+  `apc setting` alone prints the same table as `apc config`, which is the list of every key.
 
 ## Constraints that come from the product promise (do not silently break)
 
@@ -311,7 +316,7 @@ three-OS release, or the 15 MB gate. It has its own `Cargo.lock`; build it from 
   - Measured at v1.3: the release binary without telemetry is 10 054 128 B, up ~1.9 MB from
     8 147 656 B — bundled SQLite is that cost, and it is the price of the no-system-dependency
     promise. At v2.2 (axum + CORS + providers route + the chat view's modes and commands) it is
-    **10 504 880 B**, so ~5.1 MB below the gate.
+    **10 635 952 B** at v2.3 (`apc setting`, `model download` without an id), so ~5 MB below the gate.
 - **CI is the contract** (`.github/workflows/ci.yml`): `fmt`, `clippy -D warnings` and `test` in
   **three feature shapes** — default, `--features open-jev`, `--features telemetry` — plus a
   release build on Linux/macOS/Windows with a 15 MB size gate (`wc -c` < 15728640, `apc.exe` on

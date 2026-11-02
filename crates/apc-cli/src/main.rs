@@ -64,6 +64,19 @@ enum Command {
     Model(ModelArgs),
     /// Serve the agent on 127.0.0.1 for a UI client.
     Serve(ServeArgs),
+    /// Show a setting, or write one to the configuration file.
+    Setting(SettingArgs),
+}
+
+#[derive(Args)]
+struct SettingArgs {
+    /// Dotted key, e.g. `telemetry`, `decision.threshold`, `tools.searxng_url`.
+    key: Option<String>,
+    /// New value. Omit to show the key's effective value and where it came from.
+    value: Option<String>,
+    /// Write ./apc.toml instead of the user configuration.
+    #[arg(long)]
+    project: bool,
 }
 
 #[derive(Args)]
@@ -124,10 +137,10 @@ struct ModelArgs {
 enum ModelCommand {
     /// List the published models and what is on disk.
     List,
-    /// Download a model, resuming an interrupted one.
+    /// Download a model, resuming an interrupted one. Without an id, every model.
     Download {
-        /// Model id (`apc model list`).
-        id: String,
+        /// Model id (`apc model list`). Omit to complete or resume all of them.
+        id: Option<String>,
     },
     /// Show whether a model is installed.
     Status {
@@ -199,6 +212,7 @@ async fn run(cli: Cli) -> Result<()> {
             let (loaded, _) = resolve(&args.overrides)?;
             serve::serve(loaded.config, args.port).await
         }
+        Command::Setting(args) => setting(&args),
     }
 }
 
@@ -210,6 +224,7 @@ fn overrides(command: &Command) -> Option<&Overrides> {
         Command::Chat(args) => Some(&args.overrides),
         Command::Model(_) => None,
         Command::Serve(args) => Some(&args.overrides),
+        Command::Setting(_) => None,
     }
 }
 
@@ -471,34 +486,21 @@ async fn model(args: &ModelArgs) -> Result<()> {
                 );
             }
         }
-        ModelCommand::Download { id } => {
-            let entry = apc_decision::find(id)?;
-            match store.status(id)? {
-                apc_decision::Status::Installed => {
+        ModelCommand::Download { id } => match id.as_deref() {
+            Some(id) => install(&store, id).await?,
+            None => {
+                if apc_decision::CATALOG.is_empty() {
                     println!(
-                        "{id} is already installed at {}",
-                        store.installed(id).display()
+                        "no decision model is published yet: nothing to download (SPEC.md §8.11)"
                     );
                     return Ok(());
                 }
-                apc_decision::Status::Partial(bytes) => {
-                    eprintln!("resuming {id} at {bytes} bytes");
+                // Every published model, so a re-run finishes whatever a killed one left partial.
+                for entry in apc_decision::CATALOG {
+                    install(&store, entry.id).await?;
                 }
-                apc_decision::Status::Missing => {}
             }
-            let mut shown = 0u64;
-            let path = store
-                .download(entry, |written| {
-                    let percent = written * 100 / entry.bytes.max(1);
-                    if percent >= shown + 5 || written == entry.bytes {
-                        shown = percent;
-                        eprint!("\r{id}: {percent}%");
-                    }
-                })
-                .await?;
-            eprintln!();
-            println!("installed {} at {}", entry.id, path.display());
-        }
+        },
         ModelCommand::Status { id } => {
             apc_decision::find(id)?;
             match store.status(id)? {
@@ -526,6 +528,108 @@ async fn model(args: &ModelArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Download one model, resuming a partial file where the last run stopped.
+async fn install(store: &apc_decision::Store, id: &str) -> Result<()> {
+    let entry = apc_decision::find(id)?;
+    match store.status(id)? {
+        apc_decision::Status::Installed => {
+            println!(
+                "{id} is already installed at {}",
+                store.installed(id).display()
+            );
+            return Ok(());
+        }
+        apc_decision::Status::Partial(bytes) => eprintln!("resuming {id} at {bytes} bytes"),
+        apc_decision::Status::Missing => {}
+    }
+    let mut shown = 0u64;
+    let path = store
+        .download(entry, |written| {
+            let percent = written * 100 / entry.bytes.max(1);
+            if percent >= shown + 5 || written == entry.bytes {
+                shown = percent;
+                eprint!("\r{id}: {percent}%");
+            }
+        })
+        .await?;
+    eprintln!();
+    println!("installed {} at {}", entry.id, path.display());
+    Ok(())
+}
+
+/// `apc setting [key] [value]`: read the effective settings, or write one to a file.
+fn setting(args: &SettingArgs) -> Result<()> {
+    let overrides = Overrides {
+        provider: None,
+        model: None,
+        permission_threshold: None,
+    };
+    let Some(key) = args.key.as_deref() else {
+        show_config(&overrides)?;
+        println!();
+        println!("write one with `apc setting <key> <value>` (--project for ./apc.toml)");
+        return Ok(());
+    };
+    let Some(value) = args.value.as_deref() else {
+        let (loaded, _) = resolve(&overrides)?;
+        let table = toml::Value::try_from(&loaded.config).context("serialise the configuration")?;
+        let current = lookup(&table, key)
+            .with_context(|| format!("unknown setting `{key}` (try `apc setting`)"))?;
+        let source = loaded.sources.get(key).copied().unwrap_or(Source::Defaults);
+        println!("{key} = {}  ({})", plain(current), source.label());
+        return Ok(());
+    };
+
+    let path = if args.project {
+        current_dir()?.join("apc.toml")
+    } else {
+        ProjectDirs::from("dev", "aplix", "aplix")
+            .context("cannot determine the user configuration directory")?
+            .config_dir()
+            .join("apc.toml")
+    };
+    let label = path.display().to_string();
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut table: toml::Table = if existing.trim().is_empty() {
+        toml::Table::new()
+    } else {
+        toml::from_str(&existing).with_context(|| format!("parse {label}"))?
+    };
+    // `on`/`off`/`yes`/`no` read as booleans; everything else keeps `scalar`'s typing.
+    let parsed = match config::scalar(value) {
+        toml::Value::String(text) => {
+            config::boolean(&text).map_or(toml::Value::String(text), toml::Value::Boolean)
+        }
+        other => other,
+    };
+    config::set_path(&mut table, key, parsed.clone());
+    let text = toml::to_string_pretty(&table).context("serialise the configuration")?;
+    // Refuses an unknown key and an out-of-range threshold before anything touches the disk.
+    config::resolve(&[Layer::parse(Source::User, &label, &text)?])?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    std::fs::write(&path, text).with_context(|| format!("write {label}"))?;
+    if existing.contains('#') {
+        eprintln!("note: {label} was rewritten without its comments");
+    }
+    println!("{key} = {}  ({label})", plain(&parsed));
+    Ok(())
+}
+
+/// Follow a dotted key inside a parsed document.
+fn lookup<'a>(value: &'a toml::Value, path: &str) -> Option<&'a toml::Value> {
+    path.split('.').try_fold(value, |value, key| value.get(key))
+}
+
+/// A value as it would be typed, without TOML's quotes and escapes.
+fn plain(value: &toml::Value) -> String {
+    match value {
+        toml::Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
 }
 
 fn init(args: &InitArgs) -> Result<()> {
@@ -610,6 +714,19 @@ fn show_config(args: &Overrides) -> Result<()> {
                 .endpoint
                 .clone()
                 .unwrap_or_else(|| "-".to_owned()),
+        ),
+        (
+            "tools.searxng_url",
+            loaded
+                .config
+                .tools
+                .searxng_url
+                .clone()
+                .unwrap_or_else(|| "-".to_owned()),
+        ),
+        (
+            "tools.fetch_max_bytes",
+            loaded.config.tools.fetch_max_bytes.to_string(),
         ),
         ("telemetry", loaded.config.telemetry.to_string()),
     ];
