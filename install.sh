@@ -44,7 +44,7 @@ fi
 
 # Report what is being replaced, so an update is visible rather than silent.
 if [ -x "$INSTALL_DIR/apc" ]; then
-  say "updating $("$INSTALL_DIR/apc" --version 2>/dev/null || echo "apc (unknown version)")"
+  say "updating $("$INSTALL_DIR/apc" --version 2>/dev/null | head -n 1 || echo "apc (unknown version)")"
 else
   say "installing apc"
 fi

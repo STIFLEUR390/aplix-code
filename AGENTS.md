@@ -348,9 +348,13 @@ PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
 cargo build
 ```
 
-`install.sh` / `uninstall.sh` are POSIX `sh` and are the supported install and update path. The asset
-names are shared with `.github/workflows/release.yml` (`apc-<runner.os>-<runner.arch>.tar.gz`, and a
-`<name>.sha256` named after the package, not the archive) — change one side, change the other.
+`install.sh` / `uninstall.sh` are POSIX `sh` (Linux, macOS via `curl | sh`), `install.ps1` /
+`uninstall.ps1` are PowerShell 5.1 (Windows via `irm | iex`), and together they are the supported
+install, update and removal path. Both pairs read the same asset names as
+`.github/workflows/release.yml` — `apc-<runner.os>-<runner.arch>.tar.gz|zip`, plus a `<name>.sha256`
+named after the package, not the archive — so change one side and you change the other. The CI
+`scripts` job only *parses* them (shellcheck; the PowerShell parser): there is no release to fetch on
+every push, so a real download is still manual.
 
 The CLI tests spawn `CARGO_BIN_EXE_apc` with a throwaway `HOME`/`XDG_CONFIG_HOME` and clear the
 `APC_*` variables, so they never read your real `~/.config/aplix/apc.toml` or your `.env` (the child's

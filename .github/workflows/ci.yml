@@ -27,6 +27,30 @@ jobs:
       - run: cargo test --workspace --features open-jev
       - run: cargo test --workspace --features telemetry
 
+  scripts:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      # The installers cannot be run here (no release to fetch on every push), but their syntax can
+      # be parsed by the shells that will run them, which is where a typo actually bites.
+      - name: Parse the shell installers
+        if: runner.os == 'Linux'
+        run: shellcheck --shell=sh install.sh uninstall.sh
+      - name: Parse the PowerShell installers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($file in 'install.ps1', 'uninstall.ps1') {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | ForEach-Object { Write-Error "$file`: $($_.Message)" } }
+            Write-Host "$file parsed"
+          }
+
   size:
     runs-on: ${{ matrix.os }}
     strategy:

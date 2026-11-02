@@ -99,39 +99,56 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ### Install
 
+**Linux and macOS**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/STIFLEUR390/aplix-code/main/install.sh | sh
 ```
 
-That is the whole install: it picks the archive for your OS and architecture, verifies its SHA-256
-against the published `.sha256`, and drops `apc` in `~/.local/bin`. No sudo, no system dependency —
-TLS is `rustls`, there is no OpenSSL to find.
+**Windows** (PowerShell 5.1+, which is every Windows 10 and later)
+
+```powershell
+irm https://raw.githubusercontent.com/STIFLEUR390/aplix-code/main/install.ps1 | iex
+```
+
+That is the whole install on both: it picks the archive for your OS and architecture, verifies its
+SHA-256 against the published `.sha256`, and puts the binary where you can run it — `~/.local/bin` on
+Unix, `%LOCALAPPDATA%\apc` on Windows. No sudo, no administrator prompt, no system dependency: TLS
+is `rustls`, there is no OpenSSL to find.
 
 | Variable | Effect |
 | :--- | :--- |
-| `APC_INSTALL_DIR` | Where the binary goes (default `~/.local/bin`). |
+| `APC_INSTALL_DIR` | Where the binary goes (default `~/.local/bin`, or `%LOCALAPPDATA%\apc`). |
 | `APC_VERSION` | Pin a release tag (`v1.2.0`) instead of the latest one. |
 
-If the script says `~/.local/bin` is not in your `PATH`, add it to your shell profile:
-`export PATH="$HOME/.local/bin:$PATH"`.
+If the script says the directory is not in your `PATH`, it prints the exact line to add —
+`export PATH="$HOME/.local/bin:$PATH"` in your shell profile, or a `SetEnvironmentVariable` call for
+the Windows user `PATH` (then open a new terminal).
 
-**Update** is the same command: re-run it and it replaces the binary, telling you which version it is
-replacing. `APC_INSTALL_DIR` must match the one you installed with.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/STIFLEUR390/aplix-code/main/install.sh | sh
-```
+**Update** is the same command. Re-run it and it replaces the binary, printing the version it is
+replacing first. `APC_INSTALL_DIR` has to match the one you installed with.
 
 ### Uninstall
+
+**Linux and macOS**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/STIFLEUR390/aplix-code/main/uninstall.sh | sh
 # ...or, from a checkout: sh uninstall.sh [--purge]
 ```
 
-The binary goes; your config, sessions and models stay. `--purge` also deletes `~/.config/aplix`
-(the `apc.toml` you wrote) and `~/.local/share/aplix` (`memory.db`, the serve token, downloaded
-models). Nothing else is touched — no `PATH` edit, no shell profile edit.
+**Windows**
+
+```powershell
+irm https://raw.githubusercontent.com/STIFLEUR390/aplix-code/main/uninstall.ps1 | iex
+# with --purge (piped input cannot take the switch):
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/STIFLEUR390/aplix-code/main/uninstall.ps1))) -Purge
+```
+
+The binary goes; your config, sessions and models stay. `--purge` / `-Purge` also deletes
+`~/.config/aplix` (the `apc.toml` you wrote), `~/.local/share/aplix` (`memory.db`, the serve token,
+downloaded models), or on Windows their `%APPDATA%\aplix\aplix` equivalent. Nothing else is
+touched — no `PATH` edit, no shell profile edit.
 
 Prefer to do it by hand? Grab `apc-Linux-X64.tar.gz`, `apc-macOS-ARM64.tar.gz` or
 `apc-Windows-X64.zip` from [the releases page](https://github.com/STIFLEUR390/aplix-code/releases) —
