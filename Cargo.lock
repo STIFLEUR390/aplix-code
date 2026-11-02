@@ -99,18 +99,20 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "apc-agent"
-version = "1.0.0"
+version = "2.5.0"
 dependencies = [
  "apc-core",
  "apc-traits",
+ "async-trait",
  "futures-util",
  "serde_json",
+ "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "apc-cli"
-version = "1.0.0"
+version = "2.5.0"
 dependencies = [
  "anyhow",
  "apc-agent",
@@ -138,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "apc-core"
-version = "1.0.0"
+version = "2.5.0"
 dependencies = [
  "futures-core",
  "rustls",
@@ -150,7 +152,7 @@ dependencies = [
 
 [[package]]
 name = "apc-decision"
-version = "1.0.0"
+version = "2.5.0"
 dependencies = [
  "apc-core",
  "apc-traits",
@@ -165,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "apc-memory"
-version = "1.0.0"
+version = "2.5.0"
 dependencies = [
  "apc-core",
  "apc-traits",
@@ -178,7 +180,7 @@ dependencies = [
 
 [[package]]
 name = "apc-models"
-version = "1.0.0"
+version = "2.5.0"
 dependencies = [
  "apc-core",
  "apc-traits",
@@ -191,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "apc-plugins"
-version = "1.0.0"
+version = "2.5.0"
 dependencies = [
  "apc-core",
  "apc-decision",
@@ -201,7 +203,7 @@ dependencies = [
 
 [[package]]
 name = "apc-tools"
-version = "1.0.0"
+version = "2.5.0"
 dependencies = [
  "apc-core",
  "apc-decision",
@@ -215,7 +217,7 @@ dependencies = [
 
 [[package]]
 name = "apc-traits"
-version = "1.0.0"
+version = "2.5.0"
 dependencies = [
  "apc-core",
  "async-trait",

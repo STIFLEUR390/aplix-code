@@ -54,7 +54,7 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 
 ## ✨ Features
 
-### ✅ Working today (`v2.4`)
+### ✅ Working today (`v2.5`)
 
 - **`apc run "<prompt>"`** — One-shot agent mode: streams the answer, calls tools, guards shell.
 - **`apc chat`** — Full-screen chat view (`ratatui`): scrollable transcript, a status bar, slash
@@ -78,9 +78,12 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
   extraction as Markdown via `rs-trafilatura`, boilerplate dropped). Every tool result is capped
   (`tools.max_output_bytes`, 32 KB; 64 KB for a fetched page) and ends with
   `[truncated at N of M bytes]` when it was cut.
-- **Honest context handling** — every turn re-sends the session as it stands: no compaction, no
-  hidden summarisation, nothing silently dropped. `MAX_STEPS` (8 tool rounds) and the tool-result
-  caps bound one turn; a very long session is not compacted yet (`SPEC.md` §8.16).
+- **Honest context handling** — every turn re-sends the session as it stands, until it reaches 75%
+  of `context.max_bytes` (256 KB by default). Then, before the model is asked, the turns before your
+  current prompt are summarised into one system message and shown as
+  `[compacted N earlier messages into a summary]`. The session on disk keeps everything; only what
+  the model is sent shrinks. `MAX_STEPS` (8 tool rounds) and the tool-result caps bound one turn
+  (`SPEC.md` §8.16 and §8.17).
 - **Private web search** — `web_search` goes through your own SearXNG instance
   (`tools.searxng_url` / `APC_SEARXNG_URL`); without one the tool is not registered at all, so the
   model is never offered a tool that cannot answer.
@@ -319,6 +322,7 @@ cargo test --workspace                        # fmt + clippy -D warnings are par
 | **v2.2** | Chat view modes (`plan`/`build`), model picker, slash commands |
 | **v2.3** | `apc setting`, and `apc model download` resuming every published model |
 | **v2.4** | Every tool result capped (`tools.max_output_bytes`), `SPEC.md` §8.16 |
+| **v2.5** | Automatic compaction at 75% of `context.max_bytes`, fail-open summary (§8.17) |
 
 ---
 

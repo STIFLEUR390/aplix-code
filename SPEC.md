@@ -621,16 +621,15 @@ permissif (`tower-http`, feature `cors`) : la webview est une origine différent
 **Coût mesuré :** `axum` 0.7 ajoute `axum`, `axum-core`, `matchit`, `mime` et `serde_path_to_error`
 au graphe (5 paquets ; `hyper`, `tower`, `http-body` étaient déjà là pour `reqwest`), `tower-http`
 ajoute le sien pour CORS, et le binaire release passe de 10 054 128 à **10 492 592** octets
-(v2.2, commandes et modes de la vue : 10 504 880 ; v2.3, `apc setting` + reprise des modèles : 10 635 952) —
+(v2.2, commandes et modes de la vue : 10 504 880 ; v2.3, `apc setting` + reprise des modèles :
+10 635 952 ; v2.5, plafonds d'outils + compaction : 10 664 688) —
 toujours sous la barre des 15 Mo. Le binaire de bureau n'entre pas dans ce budget (il est hors
 workspace) et n'a pas été pesé.
 
-### 8.16 Le contexte n'est pas compacté, mais chaque résultat d'outil est plafonné
+### 8.16 Chaque résultat d'outil est plafonné
 
-`apc_agent::Agent::run` renvoie la conversation entière à chaque tour et n'en retire jamais rien :
-il n'y a ni compaction, ni budget de tokens, ni troncature de l'historique (SPEC §9). Ce qui borne
-le contexte est donc explicite, et une seule chose manquait : le contenu que les outils locaux jettent
-dedans.
+`apc_agent::Agent::run` renvoie la conversation entière à chaque tour : le budget et la compaction
+(§8.17) décident *quoi* envoyer, ce plafond décide *combien* chaque outil peut y mettre.
 
 - `tools.max_output_bytes` (32768) s'applique à `read_file`, `list_dir` et `run_shell`, via le même
   `truncate()` que `fetch_page` : la coupe tombe sur une frontière de caractère et le texte se termine
@@ -642,15 +641,45 @@ dedans.
 - Pas de compteur de tokens : `tiktoken-rs` ne connaît que les encodages OpenAI, donc un budget en
   tokens serait faux pour Anthropic, Ollama, Groq et les passerelles locales — six fournisseurs pour
   deux dialectes. Le plafond en octets est identique pour tous et ne coûte aucune dépendance.
-- La compaction (résumer les vieux tours) reste hors périmètre V1 ; c'est elle qui demandera une
-  mesure, pas un plafond arbitraire.
+- La compaction des vieux tours est en §8.17 ; les deux se complètent : le plafond borne un appel
+  d'outil, la compaction borne la session.
+
+### 8.17 Compaction automatique à 75 % du contexte
+
+Une session longue grossit sans fin : `apc chat` recharge tout l'historique, `Agent::run` le renvoie
+entier, et un fournisseur finit par refuser. La compaction est donc automatique, dans la boucle, pas
+dans la CLI.
+
+- **Mesure** : les octets du texte envoyé (contenu plus arguments d'appels), pas des tokens.
+  `tiktoken-rs` n'implémente que les BPE d'OpenAI, donc un compte exact vaut pour un fournisseur sur
+  six ; les octets sont justes partout, et ~4 octets font un token.
+- **Budget** : `context.max_bytes`, 262 144 par défaut (≈ 64 k tokens). Seuil de déclenchement
+  `COMPACT_AT = 75 %`, au milieu de la bande 70–80 % : il reste de quoi résumer et répondre dans la
+  même fenêtre, et un tour qui grossit en cours de boucle tient encore dessous.
+- **Ce qui est résumé** : tout ce qui précède le dernier message `user`, c'est-à-dire l'historique
+  des tours précédents — jamais le prompt courant ni les résultats d'outils auxquels le modèle est en
+  train de répondre. Le prompt système de tête (`skills/`) est conservé tel quel.
+- **Comment** : un appel au même `ModelAdapter` (aucune dépendance, aucun service), puis un message
+  système « Earlier conversation, summarised automatically: … » à la place de l'historique. Une seule
+  fois par tour : re-résumer à chaque étape d'outil doublerait le coût de chaque outil.
+- **La vue compactée est une copie.** La conversation de l'appelant garde tout, donc la persistance
+  SQLite, la vue et `apply_memory` continuent de voir la session entière ; seul ce que le modèle reçoit
+  change. Rien n'est réécrit sur disque.
+- **Échec ouvert** : si le fournisseur refuse le résumé, le tour continue avec la note « N earlier
+  messages were dropped to stay inside the context budget » — une panne de résumé ne doit pas coûter
+  la réponse. C'est la même règle que la cascade du garde-fou (§8.11).
+- **Visible** : `ChatEvent::Compacted(n)`, affiché en `[compacted N earlier messages into a summary]`
+  (stderr en REPL et `apc run`, ligne de transcription dans la vue).
+- **Limite assumée** : compaction par session et par tour, pas de compteur de tokens ni de fenêtre
+  glissante fine ; un seul tour peut encore dépasser (`MAX_STEPS` × `tools.max_output_bytes` = 8 × 32 Ko).
 
 ---
 
 ## 9. Hors périmètre V1 (explicite)
 
 1. Application Tauri : fenêtre posée dans `crates/apc-desktop`, hors workspace (§8.15) ; il reste à en faire un paquet installable (`tauri bundle`), ce que ce dépôt ne fait pas.
-2. Compaction du contexte : `MAX_STEPS` et `tools.max_output_bytes` bornent un tour, pas une session ; une session longue grossit jusqu'au refus du fournisseur (§8.16).
+2. Compactage fin du contexte : la compaction (§8.17) résume l'historique à 75 % du budget, mais un
+   seul tour reste borné par `MAX_STEPS` × `tools.max_output_bytes`, et rien ne compte les tokens.
 2. Recherche web (SearXNG) et extraction (Obscura, Firecrawl, Crawl4AI).
 3. Knowledge graph et distillation de la mémoire : la v1.3 livre SQLite + FTS5, rien de plus.
 4. Chargement dynamique de plugins (`.so`/`.dylib`/WASM) : les traits existent, les plugins V1 sont

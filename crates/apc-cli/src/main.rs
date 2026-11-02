@@ -341,9 +341,16 @@ async fn repl(
 
 /// Print streamed text as it arrives.
 fn print_delta(event: &ChatEvent) {
-    if let ChatEvent::Delta(delta) = event {
-        print!("{delta}");
-        let _ = io::stdout().flush();
+    match event {
+        ChatEvent::Delta(delta) => {
+            print!("{delta}");
+            let _ = io::stdout().flush();
+        }
+        // Quiet on stdout so a piped answer stays parseable, visible enough to explain itself.
+        ChatEvent::Compacted(dropped) => {
+            eprintln!("[compacted {dropped} earlier messages into a summary]");
+        }
+        ChatEvent::ToolCall(_) | ChatEvent::Done => {}
     }
 }
 
@@ -442,7 +449,11 @@ pub(crate) fn agent(
     let decision = decision_provider(config.decision.endpoint.as_deref());
     let tools =
         apc_plugins::default_tools(std::env::current_dir()?, decision, approver, config, mode);
-    Ok(apc_agent::Agent::new(adapter, tools))
+    Ok(apc_agent::Agent::new(
+        adapter,
+        tools,
+        config.context.max_bytes,
+    ))
 }
 
 /// Asks the terminal before a destructive command runs.

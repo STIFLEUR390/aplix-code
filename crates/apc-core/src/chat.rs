@@ -117,6 +117,8 @@ pub enum ChatEvent {
     ToolCall(ToolCall),
     /// The model finished; the stream ends after this.
     Done,
+    /// Older turns were summarised to stay inside the context budget, before the model was asked.
+    Compacted(usize),
 }
 
 /// Streamed completion. Errors mid-stream are reported in-band.

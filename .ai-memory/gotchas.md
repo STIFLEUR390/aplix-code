@@ -276,15 +276,21 @@ the reason is the most likely regression here:
 - Real local-jev on this machine: `local-jev serve --port 8091` (8080 is Apache), then
   `APC_DECISION_ENDPOINT=http://127.0.0.1:8091` on a binary built with `--features open-jev`.
 
-## Context bounds (v2.4)
+## Context bounds and compaction (v2.4, v2.5)
 
 - Nothing compacts the conversation: `Agent::run` re-sends the whole `Vec<Message>` every turn and
   never removes an entry. The only bounds are `MAX_STEPS` (8 tool rounds) and the per-call output
   caps — `tools.max_output_bytes` (32768) for `read_file`/`list_dir`/`run_shell`,
   `tools.fetch_max_bytes` (65536) for `fetch_page`. Both go through `apc_tools::truncate`, which cuts
   on a char boundary and appends `[truncated at N of M bytes]`.
-- The cap is per call, not cumulative: eight `read_file` calls of 32 KB still fill the window. If a
-  session starts hitting provider limits, that is the missing compaction, not a bad cap.
+- The cap is per call, not cumulative: eight `read_file` calls of 32 KB still fill a window.
+- Compaction (v2.5) triggers at `COMPACT_AT = 75` percent of `context.max_bytes` (262144), from
+  `Agent::run`, once per run, and summarises everything before the last `user` message through the
+  same adapter. It sends a *copy*: never rewrite the caller's `Vec<Message>`, or the CLI's
+  `messages[before..]` persistence and the TUI transcript desynchronise. Fail-open: a broken summary
+  becomes a "dropped" note, never an error.
+- The summary is a `Role::System` message, so `apply_skill_file` (`retain(role != System)`) replaces
+  it on the next prompt — expected, it is re-derived each turn.
 - Do not reach for `tiktoken-rs` to "measure properly": it only implements OpenAI's BPE, so the
   number would be wrong for Anthropic, Ollama, Groq and local gateways. Count bytes, or count per
   provider where the provider documents it.

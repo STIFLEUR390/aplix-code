@@ -187,13 +187,19 @@ still exists in `main::repl` and must keep working.
 - `apc_plugins::default_tools(root, decision, approver, config, mode)` takes the whole `&Config`: the
   threshold, the tool URLs and the output caps come from one place, and adding a tool stops growing
   the parameter list.
+- **The conversation is compacted at 75% of `context.max_bytes`** (SPEC §8.17). `Agent::run`
+  measures the bytes it sends (content + tool arguments, no token count: `tiktoken-rs` only knows
+  OpenAI's BPE), and once past `COMPACT_AT` it summarises everything before the last `user` message
+  through the same `ModelAdapter`, then sends a *copy* with that summary in place of the history —
+  the caller's `Vec<Message>` is untouched, so persistence and the view still see the whole session.
+  One summary per run, fail-open to "N earlier messages were dropped …", surfaced as
+  `ChatEvent::Compacted(n)`. A unit test pins the three paths (summarised, summarised-and-broken,
+  under budget).
 - **Every tool result is capped** (SPEC §8.16): `read_file`, `list_dir` and `run_shell` go through
   the shared `apc_tools::truncate` with `tools.max_output_bytes` (32 KB), `fetch_page` through
   `tools.fetch_max_bytes` (64 KB). The cut lands on a char boundary and ends with
   `[truncated at N of M bytes]`, so the model knows it is missing something. It is per call, not
-  cumulative, and nothing else bounds the context: there is no compaction and no token budget
-  (`tiktoken-rs` only knows OpenAI encodings, so a token count would be wrong for half the
-  providers). A new tool that returns text must take one of the two caps.
+  cumulative. A new tool that returns text must take one of the two caps.
 - `fetch_page` is **not** Obscura: `obscura serve` speaks CDP (WebSocket) only, no WebSocket crate is
   cached offline, and the `obscura` crate builds V8 from source. The reasoning, and
   `obscura mcp --http` as the way back, are in `SPEC.md` §8.13. Don't reintroduce an
@@ -324,7 +330,8 @@ three-OS release, or the 15 MB gate. It has its own `Cargo.lock`; build it from 
   - Measured at v1.3: the release binary without telemetry is 10 054 128 B, up ~1.9 MB from
     8 147 656 B — bundled SQLite is that cost, and it is the price of the no-system-dependency
     promise. At v2.2 (axum + CORS + providers route + the chat view's modes and commands) it is
-    **10 635 952 B** at v2.3 (`apc setting`, `model download` without an id), so ~5 MB below the gate.
+    10 504 880 B, at v2.3 (`apc setting`, `model download` without an id) **10 635 952 B**, and at
+    v2.5 (tool caps + compaction) **10 664 688 B**, so ~5 MB below the gate.
 - **CI is the contract** (`.github/workflows/ci.yml`): `fmt`, `clippy -D warnings` and `test` in
   **three feature shapes** — default, `--features open-jev`, `--features telemetry` — plus a
   release build on Linux/macOS/Windows with a 15 MB size gate (`wc -c` < 15728640, `apc.exe` on

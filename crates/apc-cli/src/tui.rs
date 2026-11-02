@@ -77,6 +77,7 @@ impl Approver for TuiApprover {
 /// What the agent task reports back to the view.
 enum Event {
     Delta(String),
+    Note(String),
     Done(Option<String>),
 }
 
@@ -477,6 +478,7 @@ pub async fn chat(
                     let transcript = &mut app.transcript;
                     transcript.push_str(&delta);
                 }
+                Ok(Event::Note(note)) => app.note(&note),
                 Ok(Event::Done(error)) => {
                     if let Some(error) = error {
                         app.note(&format!("error: {error}"));
@@ -523,10 +525,15 @@ async fn run_turn(
             }
             let sent = tx.clone();
             let outcome = agent
-                .run(&mut messages, move |event| {
-                    if let ChatEvent::Delta(delta) = event {
+                .run(&mut messages, move |event| match event {
+                    ChatEvent::Delta(delta) => {
                         let _ = sent.send(Event::Delta(delta.clone()));
                     }
+                    ChatEvent::Compacted(dropped) => {
+                        let note = format!("[{dropped} earlier messages summarised]");
+                        let _ = sent.send(Event::Note(note));
+                    }
+                    ChatEvent::ToolCall(_) | ChatEvent::Done => {}
                 })
                 .await;
             for message in &messages[before + 1..] {

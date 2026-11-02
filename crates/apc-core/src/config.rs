@@ -36,6 +36,11 @@ threshold = 0.8
 # (APC_DECISION_ENDPOINT). Without it the heuristics answer.
 # endpoint = "http://127.0.0.1:8080"
 
+[context]
+# Bytes of the whole conversation the model is sent. Past 75% of it, the turns before the
+# current prompt are summarised into one system message (SPEC.md §8.17). ~4 bytes a token.
+max_bytes = 262144
+
 [tools]
 # SearXNG instance backing `web_search` (or export APC_SEARXNG_URL). Unset means the tool is
 # not registered at all: no URL, no outbound request, and no error at startup.
@@ -54,6 +59,8 @@ pub struct Config {
     pub provider: Provider,
     /// Local decision layer settings.
     pub decision: Decision,
+    /// Conversation budget and automatic compaction (v2.5).
+    pub context: Context,
     /// Local web tools (v1.2).
     pub tools: Tools,
     /// Opt-in Sentry-compatible error reporting (SPEC.md §3.4).
@@ -100,6 +107,20 @@ impl Default for Decision {
             threshold: 0.8,
             endpoint: None,
         }
+    }
+}
+
+/// `[context]` section.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Context {
+    /// Bytes of the whole conversation before older turns are summarised.
+    pub max_bytes: usize,
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Self { max_bytes: 262_144 }
     }
 }
 
@@ -413,7 +434,7 @@ mod tests {
     #[test]
     fn defaults_layer_covers_every_key() {
         let defaults = Layer::defaults();
-        assert_eq!(defaults.table.len(), 4);
+        assert_eq!(defaults.table.len(), 5);
         assert_eq!(
             defaults.table["decision"]["threshold"].as_float(),
             Some(0.8)

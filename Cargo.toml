@@ -6,7 +6,7 @@ exclude = ["crates/apc-desktop"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "2.5.0"
 edition = "2021"
 rust-version = "1.80"
 license = "MIT"
@@ -14,14 +14,14 @@ repository = "https://github.com/STIFLEUR390/aplix-code"
 authors = ["STIFLEUR390"]
 
 [workspace.dependencies]
-apc-core = { path = "crates/apc-core", version = "1.0.0" }
-apc-decision = { path = "crates/apc-decision", version = "1.0.0" }
-apc-agent = { path = "crates/apc-agent", version = "1.0.0" }
-apc-memory = { path = "crates/apc-memory", version = "1.0.0" }
-apc-models = { path = "crates/apc-models", version = "1.0.0" }
-apc-plugins = { path = "crates/apc-plugins", version = "1.0.0" }
-apc-tools = { path = "crates/apc-tools", version = "1.0.0" }
-apc-traits = { path = "crates/apc-traits", version = "1.0.0" }
+apc-core = { path = "crates/apc-core", version = "2.5.0" }
+apc-decision = { path = "crates/apc-decision", version = "2.5.0" }
+apc-agent = { path = "crates/apc-agent", version = "2.5.0" }
+apc-memory = { path = "crates/apc-memory", version = "2.5.0" }
+apc-models = { path = "crates/apc-models", version = "2.5.0" }
+apc-plugins = { path = "crates/apc-plugins", version = "2.5.0" }
+apc-tools = { path = "crates/apc-tools", version = "2.5.0" }
+apc-traits = { path = "crates/apc-traits", version = "2.5.0" }
 anyhow = "1"
 async-trait = "0.1"
 axum = "0.7"

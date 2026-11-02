@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[dev-dependencies]
+async-trait.workspace = true
+tokio.workspace = true
+
 [dependencies]
 apc-core.workspace = true
 apc-traits.workspace = true
