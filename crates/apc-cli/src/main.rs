@@ -226,7 +226,11 @@ fn telemetry_enabled(cli: &Cli) -> bool {
 
 async fn run_prompt(args: &RunArgs) -> Result<()> {
     let (loaded, _) = resolve(&args.overrides)?;
-    let agent = agent(&loaded.config, std::sync::Arc::new(StdinApprover))?;
+    let agent = agent(
+        &loaded.config,
+        std::sync::Arc::new(StdinApprover),
+        config::Mode::Build,
+    )?;
     let prompt = args.prompt.join(" ");
     let mut messages = Vec::new();
     apply_skill(&mut messages, &current_dir()?, &prompt);
@@ -247,9 +251,9 @@ async fn chat(args: &ChatArgs) -> Result<()> {
     }
 
     let (approver, asks) = tui::TuiApprover::channel();
-    let agent = agent(&loaded.config, std::sync::Arc::new(approver))?;
     tui::chat(
-        std::sync::Arc::new(agent),
+        loaded.config,
+        std::sync::Arc::new(approver),
         session,
         messages,
         asks,
@@ -282,7 +286,11 @@ async fn repl(
     session: apc_core::chat::SessionId,
     mut messages: Vec<Message>,
 ) -> Result<()> {
-    let agent = agent(&config, std::sync::Arc::new(StdinApprover))?;
+    let agent = agent(
+        &config,
+        std::sync::Arc::new(StdinApprover),
+        config::Mode::Build,
+    )?;
     let root = current_dir()?;
 
     loop {
@@ -329,14 +337,37 @@ fn print_delta(event: &ChatEvent) {
 /// Skills are Markdown files at `<root>/skills/<name>.md` (SPEC.md §7). A missing file means no
 /// skill, never an error. The message is not persisted: it is re-derived from each prompt.
 pub(crate) fn apply_skill(messages: &mut Vec<Message>, root: &std::path::Path, prompt: &str) {
-    let Some(name) = apc_decision::classify(prompt).skill() else {
-        return;
-    };
+    if let Some(name) = apc_decision::classify(prompt).skill() {
+        apply_skill_file(messages, root, name);
+    }
+}
+
+/// The same, for a skill the user named in the chat view instead of letting the classifier pick.
+pub(crate) fn apply_skill_file(messages: &mut Vec<Message>, root: &std::path::Path, name: &str) {
     let Ok(text) = std::fs::read_to_string(root.join("skills").join(format!("{name}.md"))) else {
         return;
     };
     messages.retain(|message| message.role != Role::System);
     messages.insert(0, Message::system(text.trim()));
+}
+
+/// Skill names available under `<root>/skills`, for `/skills`.
+pub(crate) fn skills(root: &std::path::Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(root.join("skills")) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension()? != "md" {
+                return None;
+            }
+            Some(path.file_stem()?.to_str()?.to_owned())
+        })
+        .collect();
+    names.sort();
+    names
 }
 
 /// Puts what earlier sessions said about `prompt` in front of it, best match first.
@@ -389,11 +420,13 @@ fn decision_provider(_endpoint: Option<&str>) -> std::sync::Arc<dyn DecisionProv
 pub(crate) fn agent(
     config: &config::Config,
     approver: std::sync::Arc<dyn Approver>,
+    mode: config::Mode,
 ) -> Result<apc_agent::Agent> {
     let adapter: std::sync::Arc<dyn apc_traits::ModelAdapter> =
         std::sync::Arc::from(apc_models::build(&config.provider)?);
     let decision = decision_provider(config.decision.endpoint.as_deref());
-    let tools = apc_plugins::default_tools(std::env::current_dir()?, decision, approver, config);
+    let tools =
+        apc_plugins::default_tools(std::env::current_dir()?, decision, approver, config, mode);
     Ok(apc_agent::Agent::new(adapter, tools))
 }
 

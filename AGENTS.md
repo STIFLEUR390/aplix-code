@@ -140,7 +140,20 @@ still exists in `main::repl` and must keep working.
 - `Paragraph::line_count` is **private** in ratatui 0.29; the scroll offset comes from the small
   `wrapped_height` helper. `Style::new().red()` does not exist either — use `Style::default().fg(…)`.
 - Test it through a real pty: `script` alone leaves the window 0x0 and ratatui draws nothing, so set
-  `TIOCSWINSZ` (see `.ai-memory/commands.md` for the driver script).
+  `TIOCSWINSZ` (see `.ai-memory/commands.md` for the driver script). ratatui only repaints the cells
+  that changed, so grepping the raw byte stream for a note misses text the diff never resends —
+  replay the stream onto a small screen grid before asserting on it.
+- **Slash commands** live in `tui.rs` (`command()` parses, `App::run_command` runs): `/help`, `/mode`,
+  `/model`, `/skills`, `/skill`, `/quit`. `None` from `command()` means an ordinary prompt, and the
+  parser is deliberately I/O-free so it is unit-tested without a terminal. `Tab` completes a command
+  name, `Ctrl-U` clears the line.
+- **The mode is real, not a label**: `config::Mode::Plan` drops `write_file` and `run_shell` from the
+  tool set in `apc_plugins::default_tools`, so the model is never offered them. Tools are fixed when
+  the `Agent` is built, which is why `/mode` and `/model` **rebuild the agent** (`App::rebuild`) — and
+  why `tui::chat` takes the `Config` and the approver instead of a finished `Agent`. A `/model`
+  rebuild that fails restores the previous config before reporting.
+- **A forced skill** (`/skill <name>`) bypasses `apply_skill`'s classifier for the rest of the
+  session; `main::apply_skill_file` is the shared half that both paths call.
 
 ## Intent classification and skills (v1.1)
 
@@ -297,7 +310,8 @@ three-OS release, or the 15 MB gate. It has its own `Cargo.lock`; build it from 
     whenever a dependency is updated.
   - Measured at v1.3: the release binary without telemetry is 10 054 128 B, up ~1.9 MB from
     8 147 656 B — bundled SQLite is that cost, and it is the price of the no-system-dependency
-    promise. At v2.0 (axum + CORS + providers route) it is **10 492 592 B**, so ~5.2 MB below the gate.
+    promise. At v2.2 (axum + CORS + providers route + the chat view's modes and commands) it is
+    **10 504 880 B**, so ~5.1 MB below the gate.
 - **CI is the contract** (`.github/workflows/ci.yml`): `fmt`, `clippy -D warnings` and `test` in
   **three feature shapes** — default, `--features open-jev`, `--features telemetry` — plus a
   release build on Linux/macOS/Windows with a 15 MB size gate (`wc -c` < 15728640, `apc.exe` on

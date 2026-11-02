@@ -128,9 +128,18 @@ Still to come: hooks (`PreToolUse`, `PostToolUse`, `Stop`) and context compactio
 
 - `tui::available()` = stdin **and** stdout are terminals; anything piped (all CLI tests) takes
   `main::repl`, the untouched stdin/stdout loop.
-- State: `App { session, transcript: String, input, mode: Idle | Busy(rx), pending: Option<Ask>,
-  tick, scroll }`. One loop per tick: pick up a pending guard question, draw, drain key events, drain
-  the agent channel, `sleep(50ms)`.
+- State: `App { session, config, approver, mode, skill, agent, transcript, input, status: Idle |
+  Busy(rx), pending, tick, scroll }`. One loop per tick: pick up a pending guard question, draw, drain
+  key events, drain the agent channel, `sleep(50ms)`.
+- Slash commands (v2.2): `command(line)` parses `/help`, `/mode`, `/model`, `/skills`, `/skill`,
+  `/quit` into a `Command`, `App::run_command` applies it; anything else is a prompt. `matches(input)`
+  feeds the hint line and `Tab`. `/mode` and `/model` call `App::rebuild`, which asks
+  `main::agent(config, approver, mode)` for a fresh `Agent` — the tool set is fixed at build time, so
+  switching cannot be done otherwise. That is why `tui::chat` receives the `Config` and the approver
+  rather than a finished agent.
+- `config::Mode::Plan` removes `write_file` and `run_shell` in `apc_plugins::default_tools`; nothing
+  downstream filters, and `/skill <name>` bypasses `apply_skill`'s classifier via
+  `main::apply_skill_file`.
 - `Event` from the agent task is only `Delta(String)` and `Done(Option<String>)`: history never
   travels back through the view. `run_turn` reloads the session with `SqliteStore::load(Some(&id))`,
   appends the prompt, runs the agent, appends what it produced.

@@ -57,7 +57,8 @@ Sending each of these to a cloud LLM is slow, expensive, and leaky. `apc` answer
 ### ✅ Working today (`v1.1`)
 
 - **`apc run "<prompt>"`** — One-shot agent mode: streams the answer, calls tools, guards shell.
-- **`apc chat`** — Full-screen chat view (`ratatui`): scrollable transcript, live streaming, the
+- **`apc chat`** — Full-screen chat view (`ratatui`): scrollable transcript, a status bar, slash
+  commands (`/mode plan|build`, `/model`, `/skills`, `/skill`, `/help`), live streaming, the
   Permission Guard prompt in the status bar; falls back to a plain REPL when stdin/stdout is piped.
 - **`apc init`** — Generate a commented `apc.toml` config file.
 - **`apc config`** — Print the effective configuration and which layer supplied each key.

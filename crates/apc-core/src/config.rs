@@ -121,7 +121,48 @@ impl Default for Tools {
     }
 }
 
+/// What the agent is allowed to do, chosen per session by the chat view.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Mode {
+    /// Read-only: `write_file` and `run_shell` are not even offered to the model.
+    Plan,
+    /// Every built-in tool.
+    #[default]
+    Build,
+}
+
+impl std::fmt::Display for Mode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Plan => "plan",
+            Self::Build => "build",
+        })
+    }
+}
+
+impl Mode {
+    /// `None` when the word is not a mode, so the caller can report it.
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "plan" => Some(Self::Plan),
+            "build" => Some(Self::Build),
+            _ => None,
+        }
+    }
+}
+
 impl Config {
+    /// Point the agent at another provider, dropping a base URL written for the previous one.
+    pub fn use_provider(&mut self, name: &str, model: Option<&str>) {
+        if name != self.provider.name {
+            self.provider.base_url = None;
+        }
+        self.provider.name = name.to_owned();
+        if let Some(model) = model {
+            self.provider.model = model.to_owned();
+        }
+    }
+
     fn validate(&self) -> Result<()> {
         if !(0.0..=1.0).contains(&self.decision.threshold) {
             return Err(Error::Threshold(self.decision.threshold));
@@ -339,6 +380,28 @@ mod tests {
         let parsed = layer(Source::Project, TEMPLATE);
         let config: Config = toml::Value::Table(parsed.table).try_into().expect("schema");
         assert_eq!(config, Config::default());
+    }
+
+    #[test]
+    fn switching_provider_drops_a_base_url_written_for_the_old_one() {
+        let mut config = Config::default();
+        config.provider.base_url = Some("http://127.0.0.1:31415/v1".to_owned());
+        config.use_provider("ollama", Some("llama3"));
+        assert_eq!(config.provider.name, "ollama");
+        assert_eq!(config.provider.model, "llama3");
+        assert_eq!(config.provider.base_url, None);
+    }
+
+    #[test]
+    fn switching_model_keeps_the_provider_base_url() {
+        let mut config = Config::default();
+        config.provider.base_url = Some("http://127.0.0.1:31415/v1".to_owned());
+        config.use_provider("anthropic", Some("claude-haiku"));
+        assert_eq!(config.provider.model, "claude-haiku");
+        assert_eq!(
+            config.provider.base_url.as_deref(),
+            Some("http://127.0.0.1:31415/v1")
+        );
     }
 
     #[test]

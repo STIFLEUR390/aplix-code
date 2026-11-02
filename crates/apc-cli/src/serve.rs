@@ -172,13 +172,8 @@ async fn run(
 fn with_override(base: &Config, body: &RunRequest) -> Config {
     let mut config = base.clone();
     if let Some(provider) = &body.provider {
-        if provider != &config.provider.name {
-            // A base URL belongs to the provider it was written for.
-            config.provider.base_url = None;
-        }
-        config.provider.name = provider.clone();
-    }
-    if let Some(model) = &body.model {
+        config.use_provider(provider, body.model.as_deref());
+    } else if let Some(model) = &body.model {
         config.provider.model = model.clone();
     }
     config
@@ -223,7 +218,7 @@ impl Server {
             server: Arc::clone(&self),
             events: events.clone(),
         });
-        let agent = match super::agent(&run_config, approver) {
+        let agent = match super::agent(&run_config, approver, apc_core::config::Mode::Build) {
             Ok(agent) => agent,
             Err(error) => return report(&events, &error.to_string()),
         };

@@ -34,7 +34,7 @@ Objectifs mesurables :
 | Commande | Description | Priorité |
 | :--- | :--- | :--- |
 | `apc run "<prompt>"` | Session d'agent non interactive (one-shot) : exécute la tâche et affiche le résultat. | **P0** |
-| `apc chat` | Session interactive dans le terminal : REPL texte ligne par ligne (stdin/stdout). | **P0** |
+| `apc chat` | Session interactive : vue plein écran (`ratatui`) sur un terminal, avec `/mode`, `/model`, `/skills`, `/skill` ; REPL ligne par ligne quand l'entrée est pipée. | **P0** |
 | `apc init` | Crée un `apc.toml` commenté dans le répertoire courant. | **P0** |
 | `apc model <cmd>` | Gère les modèles de décision locaux : `list`, `download`, `status`, `verify`, `remove`. | **P0** |
 | `apc --version` / `-V` | Version de `apc` **et** du modèle de décision chargé. | **P0** |
@@ -380,6 +380,17 @@ heuristique local (`apc_decision::classify` : `generate_code`, `explain_code`, `
 tête de conversation comme message système, sans être persisté. Pas de fichier, pas de prompt
 système ; aucun modèle local n'est nécessaire.
 
+**Commandes et modes (v2.2)** : la vue a une barre de statut (mode, fournisseur/modèle, skill imposé)
+et une ligne d'aide qui propose les commandes dès que la saisie commence par `/`. `/mode plan|build`
+n'est pas une étiquette : `config::Mode::Plan` retire `write_file` et `run_shell` du jeu d'outils
+(`apc_plugins::default_tools`), donc le modèle ne se les voit jamais proposer — c'est le même principe
+que « pas d'URL, pas d'outil ». Les outils étant figés à la construction de l'`Agent`, `/mode` et
+`/model` reconstruisent l'agent ; `/model` restaure la configuration précédente si la reconstruction
+échoue (nom de fournisseur inconnu), et changer de fournisseur efface `base_url`, qui appartenait à
+l'ancien. `/skill <nom>` impose un skill pour la session et court-circuite le classifieur ; `/skill
+auto` le rend au classifieur. Rien de tout cela ne remplace le REPL : entrée pipée ⇒ REPL, comme
+avant.
+
 ### 8.7 Neuf crates conservés (dont `apc-memory` et `apc-plugins`)
 
 Le cahier des charges initial listait sept crates, sans `apc-memory` ni `apc-plugins`, alors que
@@ -608,7 +619,8 @@ permissif (`tower-http`, feature `cors`) : la webview est une origine différent
 
 **Coût mesuré :** `axum` 0.7 ajoute `axum`, `axum-core`, `matchit`, `mime` et `serde_path_to_error`
 au graphe (5 paquets ; `hyper`, `tower`, `http-body` étaient déjà là pour `reqwest`), `tower-http`
-ajoute le sien pour CORS, et le binaire release passe de 10 054 128 à **10 492 592** octets —
+ajoute le sien pour CORS, et le binaire release passe de 10 054 128 à **10 492 592** octets
+(v2.2, commandes et modes de la vue : 10 504 880) —
 toujours sous la barre des 15 Mo. Le binaire de bureau n'entre pas dans ce budget (il est hors
 workspace) et n'a pas été pesé.
 

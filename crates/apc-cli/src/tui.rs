@@ -1,10 +1,10 @@
-//! Full-screen chat view (v1.1): transcript, streaming output, single-line input.
+//! Full-screen chat view (v1.1): transcript, streaming output, a status bar and slash commands.
 //!
 //! Only used when stdin and stdout are terminals; a piped `apc chat` keeps the plain REPL, which is
 //! what the CLI tests and any script rely on.
 
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,6 +12,7 @@ use std::time::Duration;
 use anyhow::Result;
 use apc_agent::Agent;
 use apc_core::chat::{ChatEvent, Message, SessionId};
+use apc_core::config;
 use apc_memory::SqliteStore;
 use apc_traits::{Approver, MemoryStore};
 use ratatui::layout::{Constraint, Layout};
@@ -22,6 +23,22 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 const TICK: Duration = Duration::from_millis(50);
 const SPINNER: [&str; 4] = ["⠋", "⠙", "⠹", "⠸"];
+
+/// What `/help` lists; the order is the order they are offered in.
+const COMMANDS: [(&str, &str); 6] = [
+    ("/help", "this list"),
+    (
+        "/mode",
+        "[plan|build] — plan offers read_file, list_dir and the web tools only",
+    ),
+    (
+        "/model",
+        "[provider] [model] — switch, the agent is rebuilt",
+    ),
+    ("/skills", "list the skills in ./skills"),
+    ("/skill", "[name|auto] — force a skill for this session"),
+    ("/quit", "leave the view"),
+];
 
 /// A shell confirmation the agent is blocked on, answered by the next `y`/`n`.
 pub(crate) struct Ask {
@@ -63,9 +80,59 @@ enum Event {
     Done(Option<String>),
 }
 
-enum Mode {
+enum Status {
     Idle,
     Busy(UnboundedReceiver<Event>),
+}
+
+/// One slash command, already split into words.
+#[derive(Debug, PartialEq, Eq)]
+enum Command {
+    Help,
+    Quit,
+    /// `None` toggles between the two modes.
+    Mode(Option<String>),
+    /// No provider reports what is configured; one switches and rebuilds.
+    Model {
+        provider: Option<String>,
+        model: Option<String>,
+    },
+    Skills,
+    /// `None` reports, `auto` clears, anything else forces that skill.
+    Skill(Option<String>),
+    Unknown(String),
+}
+
+/// Parses a line into a command; `None` when it is an ordinary prompt.
+fn command(line: &str) -> Option<Command> {
+    let text = line.strip_prefix('/')?;
+    let mut words = text.split_whitespace();
+    let name = words.next().unwrap_or_default();
+    let rest: Vec<&str> = words.collect();
+    Some(match name {
+        "help" | "?" => Command::Help,
+        "quit" | "exit" => Command::Quit,
+        "mode" => Command::Mode(rest.first().map(|word| (*word).to_owned())),
+        "model" => Command::Model {
+            provider: rest.first().map(|word| (*word).to_owned()),
+            model: rest.get(1).map(|word| (*word).to_owned()),
+        },
+        "skills" => Command::Skills,
+        "skill" => Command::Skill(rest.first().map(|word| (*word).to_owned())),
+        other => Command::Unknown(other.to_owned()),
+    })
+}
+
+/// Command names matching what has been typed, for the hint line and Tab.
+fn matches(input: &str) -> Vec<&'static str> {
+    if !input.starts_with('/') || input.contains(' ') {
+        return Vec::new();
+    }
+    COMMANDS
+        .iter()
+        .map(|(name, _)| *name)
+        .filter(|name| name.starts_with(input))
+        .collect()
 }
 
 /// Height the transcript takes once soft-wrapped at `width`, counted the cheap way.
@@ -83,18 +150,34 @@ pub fn available() -> bool {
 
 struct App {
     session: SessionId,
+    config: config::Config,
+    approver: Arc<dyn Approver>,
+    mode: config::Mode,
+    skill: Option<String>,
+    agent: Arc<Agent>,
     transcript: String,
     input: String,
-    mode: Mode,
+    status: Status,
     pending: Option<Ask>,
     tick: usize,
     scroll: u16,
 }
 
 impl App {
+    /// Rebuilds the agent after a mode or provider change; the tool set is fixed at build time.
+    fn rebuild(&mut self) -> Result<()> {
+        let agent = super::agent(&self.config, Arc::clone(&self.approver), self.mode)?;
+        self.agent = Arc::new(agent);
+        Ok(())
+    }
+
     fn draw(&self, frame: &mut ratatui::Frame) {
-        let [body, footer] =
-            Layout::vertical([Constraint::Min(3), Constraint::Length(1)]).areas(frame.area());
+        let [body, status, footer] = Layout::vertical([
+            Constraint::Min(3),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .areas(frame.area());
 
         let paragraph = Paragraph::new(self.transcript.as_str())
             .block(Block::bordered().title(format!(" apc — {} ", self.session)))
@@ -107,6 +190,27 @@ impl App {
             .saturating_sub(self.scroll);
         frame.render_widget(paragraph.scroll((offset, 0)), body);
 
+        let hints = matches(&self.input);
+        if !hints.is_empty() {
+            frame.render_widget(
+                Paragraph::new(format!("  {}", hints.join("   ")))
+                    .style(Style::default().fg(Color::DarkGray)),
+                status,
+            );
+        } else {
+            frame.render_widget(
+                Paragraph::new(format!(
+                    " {} │ {}/{} │ skill: {} │ /help",
+                    self.mode,
+                    self.config.provider.name,
+                    self.config.provider.model,
+                    self.skill.as_deref().unwrap_or("auto"),
+                ))
+                .style(Style::default().fg(Color::DarkGray)),
+                status,
+            );
+        }
+
         if let Some(ask) = &self.pending {
             frame.render_widget(
                 Paragraph::new(format!(
@@ -117,7 +221,7 @@ impl App {
                 .style(Style::default().fg(Color::Red)),
                 footer,
             );
-        } else if matches!(self.mode, Mode::Busy(_)) {
+        } else if matches!(self.status, Status::Busy(_)) {
             frame.render_widget(
                 Paragraph::new(format!(
                     " {} thinking… (esc to quit)",
@@ -138,6 +242,98 @@ impl App {
         self.transcript.push_str(text);
         self.transcript.push('\n');
         self.scroll = 0;
+    }
+
+    /// Runs a slash command. Returns true when the view should close.
+    fn run_command(&mut self, line: &str, root: &Path) -> bool {
+        match command(line) {
+            Some(Command::Help) => {
+                let text = COMMANDS
+                    .iter()
+                    .map(|(name, about)| format!("  {name:<8} {about}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                self.note(&text);
+            }
+            Some(Command::Quit) => return true,
+            Some(Command::Mode(None)) => {
+                self.mode = match self.mode {
+                    config::Mode::Plan => config::Mode::Build,
+                    config::Mode::Build => config::Mode::Plan,
+                };
+                self.report_rebuild();
+            }
+            Some(Command::Mode(Some(word))) => match config::Mode::parse(&word) {
+                Some(mode) => {
+                    self.mode = mode;
+                    self.report_rebuild();
+                }
+                None => self.note(&format!("no such mode: {word} (plan or build)")),
+            },
+            Some(Command::Model {
+                provider: None,
+                model: None,
+            }) => self.note(&format!(
+                " {} on {} — apc_models knows: {}",
+                self.config.provider.model,
+                self.config.provider.base_url.as_deref().unwrap_or("-"),
+                apc_models::names().join(", "),
+            )),
+            Some(Command::Model { provider, model }) => {
+                let Some(provider) = provider else {
+                    return false;
+                };
+                let before = self.config.clone();
+                self.config.use_provider(&provider, model.as_deref());
+                if let Err(error) = self.rebuild() {
+                    self.config = before;
+                    let _ = self.rebuild();
+                    self.note(&format!("error: {error}"));
+                } else {
+                    self.note(&format!(
+                        "model is now {}/{}",
+                        self.config.provider.name, self.config.provider.model
+                    ));
+                }
+            }
+            Some(Command::Skills) => {
+                let names = super::skills(root);
+                if names.is_empty() {
+                    self.note("no skills in ./skills");
+                } else {
+                    self.note(&format!("skills: {}", names.join(", ")));
+                }
+            }
+            Some(Command::Skill(None)) => self.note(&format!(
+                "skill: {} (say /skill <name>)",
+                self.skill.as_deref().unwrap_or("auto")
+            )),
+            Some(Command::Skill(Some(word))) if matches!(word.as_str(), "auto" | "-") => {
+                self.skill = None;
+                self.note("skills chosen from the prompt again");
+            }
+            Some(Command::Skill(Some(name))) => {
+                if super::skills(root).contains(&name) {
+                    self.skill = Some(name.clone());
+                    self.note(&format!("every turn now starts with skills/{name}.md"));
+                } else {
+                    self.note(&format!("no such skill: {name} (see /skills)"));
+                }
+            }
+            Some(Command::Unknown(name)) => self.note(&format!("unknown command /{name} — /help")),
+            None => {}
+        }
+        false
+    }
+
+    fn report_rebuild(&mut self) {
+        match self.rebuild() {
+            Ok(()) => {
+                let mode = self.mode;
+                self.note(&format!("mode: {mode}"));
+            }
+            Err(error) => self.note(&format!("error: {error}")),
+        }
     }
 
     /// Handles one keystroke. Returns true when the user wants to leave the view.
@@ -163,11 +359,20 @@ impl App {
             return true;
         }
 
-        if matches!(self.mode, Mode::Idle) {
+        if matches!(self.status, Status::Idle) {
             match key.code {
+                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.input.clear();
+                }
                 KeyCode::Char(c) => self.input.push(c),
                 KeyCode::Backspace => {
                     self.input.pop();
+                }
+                KeyCode::Tab => {
+                    // Completes to the first command the prefix still matches.
+                    if let Some(name) = matches(&self.input).first() {
+                        self.input = format!("{name} ");
+                    }
                 }
                 _ => {}
             }
@@ -183,7 +388,8 @@ impl App {
 }
 
 pub async fn chat(
-    agent: Arc<Agent>,
+    config: config::Config,
+    approver: Arc<dyn Approver>,
     session: SessionId,
     messages: Vec<Message>,
     asks: Receiver<Ask>,
@@ -192,9 +398,18 @@ pub async fn chat(
     let mut terminal = ratatui::init();
     let mut app = App {
         session: session.clone(),
+        agent: Arc::new(super::agent(
+            &config,
+            Arc::clone(&approver),
+            config::Mode::Build,
+        )?),
+        config,
+        approver,
+        mode: config::Mode::Build,
+        skill: None,
         transcript: String::new(),
         input: String::new(),
-        mode: Mode::Idle,
+        status: Status::Idle,
         pending: None,
         tick: 0,
         scroll: 0,
@@ -226,28 +441,37 @@ pub async fn chat(
                 return Ok(());
             }
             let submitted = key.code == crossterm::event::KeyCode::Enter
-                && matches!(app.mode, Mode::Idle)
+                && matches!(app.status, Status::Idle)
                 && !app.input.trim().is_empty();
             if submitted {
                 let prompt = std::mem::take(&mut app.input);
-                if matches!(prompt.trim(), "exit" | "quit") {
+                let text = prompt.trim();
+                if matches!(text, "exit" | "quit") {
                     ratatui::restore();
                     return Ok(());
                 }
-                app.note(&format!("› {prompt}"));
+                app.note(&format!("› {text}"));
+                if text.starts_with('/') {
+                    if app.run_command(text, &root) {
+                        ratatui::restore();
+                        return Ok(());
+                    }
+                    continue;
+                }
                 let (tx, rx) = unbounded_channel();
-                app.mode = Mode::Busy(rx);
+                app.status = Status::Busy(rx);
                 tokio::spawn(run_turn(
-                    Arc::clone(&agent),
+                    Arc::clone(&app.agent),
                     session.clone(),
-                    Message::user(prompt.trim()),
+                    Message::user(text),
                     tx,
                     root.clone(),
+                    app.skill.clone(),
                 ));
             }
         }
 
-        if let Mode::Busy(rx) = &mut app.mode {
+        if let Status::Busy(rx) = &mut app.status {
             match rx.try_recv() {
                 Ok(Event::Delta(delta)) => {
                     let transcript = &mut app.transcript;
@@ -257,10 +481,10 @@ pub async fn chat(
                     if let Some(error) = error {
                         app.note(&format!("error: {error}"));
                     }
-                    app.mode = Mode::Idle;
+                    app.status = Status::Idle;
                 }
                 Err(TryRecvError::Empty) => {}
-                Err(TryRecvError::Disconnected) => app.mode = Mode::Idle,
+                Err(TryRecvError::Disconnected) => app.status = Status::Idle,
             }
         }
 
@@ -275,6 +499,7 @@ async fn run_turn(
     prompt: Message,
     tx: UnboundedSender<Event>,
     root: PathBuf,
+    skill: Option<String>,
 ) {
     let result = match SqliteStore::new() {
         Ok(store) => {
@@ -285,7 +510,10 @@ async fn run_turn(
                     return;
                 }
             };
-            super::apply_skill(&mut messages, &root, &prompt.content);
+            match skill.as_deref() {
+                Some(name) => super::apply_skill_file(&mut messages, &root, name),
+                None => super::apply_skill(&mut messages, &root, &prompt.content),
+            }
             super::apply_memory(&store, &mut messages, &session, &prompt.content).await;
             let before = messages.len();
             messages.push(prompt);
@@ -309,4 +537,45 @@ async fn run_turn(
         Err(error) => Err(error),
     };
     let _ = tx.send(Event::Done(result.err().map(|error| error.to_string())));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_plain_prompt_is_not_a_command() {
+        assert_eq!(command("explique ce fichier"), None);
+        assert_eq!(command(""), None);
+    }
+
+    #[test]
+    fn commands_take_their_arguments() {
+        assert_eq!(command("/help"), Some(Command::Help));
+        assert_eq!(command("/mode"), Some(Command::Mode(None)));
+        assert_eq!(
+            command("/mode plan"),
+            Some(Command::Mode(Some("plan".to_owned())))
+        );
+        assert_eq!(
+            command("/model ollama llama3"),
+            Some(Command::Model {
+                provider: Some("ollama".to_owned()),
+                model: Some("llama3".to_owned()),
+            })
+        );
+        assert_eq!(command("/skill"), Some(Command::Skill(None)));
+        assert_eq!(command("/nope"), Some(Command::Unknown("nope".to_owned())));
+    }
+
+    #[test]
+    fn the_hint_line_only_matches_command_words() {
+        assert_eq!(
+            matches("/"),
+            vec!["/help", "/mode", "/model", "/skills", "/skill", "/quit"]
+        );
+        assert_eq!(matches("/mod"), vec!["/mode", "/model"]);
+        assert!(matches("/mode plan").is_empty());
+        assert!(matches("bonjour").is_empty());
+    }
 }

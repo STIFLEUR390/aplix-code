@@ -7,32 +7,36 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use apc_core::config::Config;
+use apc_core::config::{Config, Mode};
 use apc_tools::{FetchPage, ListDir, ReadFile, RunShell, WebSearch, WriteFile};
 use apc_traits::{Approver, DecisionProvider, Tool};
 
 /// The built-in tool set, rooted at `root`.
 ///
 /// A tool whose service has no URL is left out on purpose: the model must not be offered a
-/// tool that cannot answer (v1.2).
+/// tool that cannot answer (v1.2). `Mode::Plan` drops the two tools that touch the project, so
+/// planning cannot write a file or run a command by mistake.
 pub fn default_tools(
     root: PathBuf,
     decision: Arc<dyn DecisionProvider>,
     approver: Arc<dyn Approver>,
     config: &Config,
+    mode: Mode,
 ) -> Vec<Arc<dyn Tool>> {
     let mut tools: Vec<Arc<dyn Tool>> = vec![
         Arc::new(ReadFile::new(root.clone())),
-        Arc::new(WriteFile::new(root.clone())),
         Arc::new(ListDir::new(root.clone())),
-        Arc::new(RunShell::new(
+        Arc::new(FetchPage::new(config.tools.fetch_max_bytes)),
+    ];
+    if mode == Mode::Build {
+        tools.push(Arc::new(WriteFile::new(root.clone())));
+        tools.push(Arc::new(RunShell::new(
             root,
             decision,
             approver,
             config.decision.threshold,
-        )),
-        Arc::new(FetchPage::new(config.tools.fetch_max_bytes)),
-    ];
+        )));
+    }
     if let Some(url) = &config.tools.searxng_url {
         tools.push(Arc::new(WebSearch::new(url)));
     }
@@ -55,11 +59,16 @@ mod tests {
     }
 
     fn names(config: &Config) -> Vec<String> {
+        names_in(config, Mode::Build)
+    }
+
+    fn names_in(config: &Config, mode: Mode) -> Vec<String> {
         let tools = default_tools(
             PathBuf::from("."),
             Arc::new(HeuristicProvider),
             Arc::new(Calm),
             config,
+            mode,
         );
         tools.iter().map(|tool| tool.name().to_owned()).collect()
     }
@@ -68,6 +77,19 @@ mod tests {
     fn an_unconfigured_search_tool_is_not_offered() {
         let config = Config::default();
         assert!(!names(&config).iter().any(|name| name == "web_search"));
+    }
+
+    #[test]
+    fn plan_mode_offers_neither_writes_nor_a_shell() {
+        let config = Config::default();
+        let plan = names_in(&config, Mode::Plan);
+        assert!(!plan.iter().any(|name| name == "write_file"));
+        assert!(!plan.iter().any(|name| name == "run_shell"));
+        assert!(plan.iter().any(|name| name == "read_file"));
+
+        let build = names(&config);
+        assert!(build.iter().any(|name| name == "write_file"));
+        assert!(build.iter().any(|name| name == "run_shell"));
     }
 
     #[test]

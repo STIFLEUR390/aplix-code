@@ -217,6 +217,15 @@ while select.select([fd], [], [], 0.1)[0]:
     os.read(fd, 65536)   # strip ANSI / \r to read the screen
 ```
 
+**Drain the pty from a thread, never in a blocking loop** — the view repaints every 50 ms, so a
+`select` loop always has data and never ends. And do not grep the raw stream: ratatui only emits the
+cells that changed, so a note drawn once may never appear contiguously. The working recipe replays the
+bytes onto a `ROWS x COLS` grid (handle `CSI H/f`, `CSI J/K`, `CSI m`, `\r`, `\n`, printable chars)
+and asserts on the rendered lines; that is how `/mode plan`, `/model ollama llama3`, the hint line
+`  /mode   /model` and the status bar ` build │ ollama/llama3 │ skill: auto │ /help` were checked.
+Type `/` to see the palette; `Tab` completes, `Ctrl-U` clears the line (the key handler answers `u`
+with CONTROL before the plain `Char(c)` arm).
+
 Verified that way: streaming shows `thinking…` then the text, `run_shell` on `rm -rf …` shows the
 `run it? … [y/N]` footer and `n` leaves the probe untouched, and a second turn recalls the first
 (history reloaded from the store).
